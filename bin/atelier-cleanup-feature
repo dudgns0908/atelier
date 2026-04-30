@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# atelier-cleanup-feature — delete local + remote feature branches that have been merged into develop.
+#
+# Usage: atelier-cleanup-feature [branch-name]
+#   No args: prune all merged feature/* branches.
+#   With arg: delete that specific branch (local + remote) if merged.
+
+set -euo pipefail
+
+target="${1:-}"
+
+git fetch --prune origin
+
+if [[ -n "$target" ]]; then
+  branches=("$target")
+else
+  mapfile -t branches < <(git branch --merged develop | grep -E '^\s*feature/' | awk '{$1=$1};1')
+fi
+
+for b in "${branches[@]}"; do
+  [[ -z "$b" ]] && continue
+  [[ "$b" == "$(git rev-parse --abbrev-ref HEAD)" ]] && { echo "Skipping current branch: $b"; continue; }
+  if git branch --merged develop | grep -qE "^\s*${b}\$"; then
+    git branch -d "$b"
+    if git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
+      git push origin --delete "$b"
+    fi
+    echo "Deleted: $b"
+  else
+    echo "Skipping unmerged: $b"
+  fi
+done

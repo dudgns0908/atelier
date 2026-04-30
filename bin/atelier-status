@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# atelier-status — emit project status as JSON (or fall back to markdown summary).
+#
+# Usage:
+#   atelier-status            # human-readable markdown summary
+#   atelier-status --json     # JSON per docs/process/status-schema.md
+#
+# Read-only. Never mutates state.
+
+set -eo pipefail
+
+OUTPUT="markdown"
+case "${1:-}" in
+  --json) OUTPUT="json" ;;
+  --help|-h)
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+    ;;
+  "") ;;
+  *) echo "Unknown arg: $1" >&2; echo "Usage: atelier-status [--json|--help]" >&2; exit 1 ;;
+esac
+
+PROJECT_ROOT="$(pwd)"
+SCHEMA_VERSION="1"
+
+# --- Helpers (no jq required for read; only emitted if --json) ---
+
+read_field() {
+  # Read a YAML-ish "key: value" field from the head of a file.
+  local file="$1" key="$2"
+  [[ -f "$file" ]] || { echo ""; return; }
+  grep -E "^${key}:" "$file" 2>/dev/null | head -n1 | sed -E "s/^${key}:[[:space:]]*//" || echo ""
+}
+
+count_files() {
+  local pattern="$1"
+  find $pattern -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' '
+}
+
+# --- Gather state ---
+
+PHASE="unknown"
+ACTIVE_MILESTONE=""
+ACTIVE_MILESTONE_TARGET=""
+TOTAL_TASKS=0
+DONE_TASKS=0
+IN_PROGRESS_TASKS=()
+ASSIGNED_TASKS=()
+OPEN_PRS=()
+ESCALATION_ACTIVE=""
+RISK_COUNT=0
+
+# Phase detection: 6-file gate test
+if [[ -s "docs/templates/operating-preferences-template.md" \
+   && -s "docs/requirements/requirements.md" \
+   && -s "docs/design/architecture.md" \
+   && -s "docs/agents/team-composition.md" \
+   && -s "docs/roadmap/roadmap.md" \
+   && -s "docs/INIT-APPROVAL.md" ]] \
+   && grep -q '^Approved by user:' docs/INIT-APPROVAL.md 2>/dev/null; then
+  PHASE="phase2"
+elif [[ -s "docs/roadmap/roadmap.md" || -s "docs/requirements/requirements.md" ]]; then
+  PHASE="phase1_in_progress"
+else
+  PHASE="not_initialized"
+fi
+
+# Active milestone
+if [[ -d docs/roadmap/milestones ]]; then
+  for m in docs/roadmap/milestones/m*-*.md; do
+    [[ -f "$m" ]] || continue
+    status="$(read_field "$m" "status")"
+    if [[ "$status" == "active" || "$status" == "in-progress" ]]; then
+      ACTIVE_MILESTONE="$(basename "$m" .md)"
+      ACTIVE_MILESTONE_TARGET="$(read_field "$m" "target")"
+      break
+    fi
+  done
+fi
+
+# Tasks + lanes + epics
+declare -A LANES=( [backlog]="" [todo]="" [in_progress]="" [in_review]="" [done]="" )
+declare -A EPICS=()
+if [[ -d docs/roadmap/tasks ]]; then
+  for t in docs/roadmap/tasks/t*-*.md docs/roadmap/tasks/h*-*.md; do
+    [[ -f "$t" ]] || continue
+    TOTAL_TASKS=$((TOTAL_TASKS + 1))
+    base="$(basename "$t" .md)"
+    status="$(read_field "$t" "status")"
+    case "$status" in
+      done|completed|merged) DONE_TASKS=$((DONE_TASKS + 1)) ;;
+      in-progress|active) IN_PROGRESS_TASKS+=("$base") ;;
+      assigned|claimed) ASSIGNED_TASKS+=("$base") ;;
+    esac
+    lane="$(read_field "$t" "lane")"
+    case "$lane" in
+      backlog|todo|done) LANES[$lane]="${LANES[$lane]} $base" ;;
+      in-progress) LANES[in_progress]="${LANES[in_progress]} $base" ;;
+      in-review)   LANES[in_review]="${LANES[in_review]} $base" ;;
+    esac
+    epic="$(read_field "$t" "epic")"
+    if [[ -n "$epic" ]]; then
+      EPICS[$epic]="${EPICS[$epic]:-} $base"
+    fi
+  done
+fi
+
+# Open PRs (forge-aware; best-effort)
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  OPEN_PRS_JSON=$(gh pr list --state open --json number,title,author,isDraft 2>/dev/null || echo '[]')
+elif command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
+  OPEN_PRS_JSON=$(glab mr list --opened --output json 2>/dev/null || echo '[]')
+else
+  OPEN_PRS_JSON='[]'
+fi
+
+# Escalation
+if [[ -f docs/flows/escalation-log.md ]]; then
+  last_open=$(grep -E '^### .* — STATUS: open' docs/flows/escalation-log.md 2>/dev/null | tail -n1 | sed 's/^### //')
+  ESCALATION_ACTIVE="$last_open"
+fi
+
+# Risks
+[[ -f docs/roadmap/risks.md ]] && RISK_COUNT=$(grep -cE '^- ' docs/roadmap/risks.md 2>/dev/null || echo 0)
+
+# Capability log delta (rows added)
+CAPABILITY_LOG_ROWS=0
+[[ -f docs/agents/capability-log.md ]] && CAPABILITY_LOG_ROWS=$(grep -cE '^\| [0-9]{4}-[0-9]{2}-[0-9]{2}' docs/agents/capability-log.md 2>/dev/null || echo 0)
+
+# --- Emit ---
+
+json_array() {
+  local items="$1"
+  local first=1 out=""
+  for item in $items; do
+    if [[ $first -eq 1 ]]; then
+      out="\"$item\""
+      first=0
+    else
+      out="$out,\"$item\""
+    fi
+  done
+  echo "$out"
+}
+
+if [[ "$OUTPUT" == "json" ]]; then
+  in_progress_array=$(json_array "${IN_PROGRESS_TASKS[*]}")
+  assigned_array=$(json_array "${ASSIGNED_TASKS[*]}")
+  lane_backlog=$(json_array "${LANES[backlog]}")
+  lane_todo=$(json_array "${LANES[todo]}")
+  lane_in_progress=$(json_array "${LANES[in_progress]}")
+  lane_in_review=$(json_array "${LANES[in_review]}")
+  lane_done=$(json_array "${LANES[done]}")
+
+  epics_json="{"
+  first=1
+  for epic in "${!EPICS[@]}"; do
+    arr=$(json_array "${EPICS[$epic]}")
+    if [[ $first -eq 1 ]]; then first=0; else epics_json="$epics_json,"; fi
+    epics_json="$epics_json\"$epic\":[$arr]"
+  done
+  epics_json="$epics_json}"
+
+  cat <<EOF
+{
+  "schema_version": "$SCHEMA_VERSION",
+  "phase": "$PHASE",
+  "active_milestone": {
+    "id": "$ACTIVE_MILESTONE",
+    "target": "$ACTIVE_MILESTONE_TARGET"
+  },
+  "tasks": {
+    "total": $TOTAL_TASKS,
+    "done": $DONE_TASKS,
+    "in_progress": [$in_progress_array],
+    "assigned": [$assigned_array]
+  },
+  "lanes": {
+    "backlog": [$lane_backlog],
+    "todo": [$lane_todo],
+    "in_progress": [$lane_in_progress],
+    "in_review": [$lane_in_review],
+    "done": [$lane_done]
+  },
+  "epics": $epics_json,
+  "open_change_requests": $OPEN_PRS_JSON,
+  "escalation_active": $( [[ -n "$ESCALATION_ACTIVE" ]] && echo "\"$ESCALATION_ACTIVE\"" || echo "null" ),
+  "risks_count": $RISK_COUNT,
+  "capability_log_rows": $CAPABILITY_LOG_ROWS
+}
+EOF
+  exit 0
+fi
+
+# Markdown summary (default)
+cat <<EOF
+# atelier status
+
+- **Phase**: $PHASE
+- **Active milestone**: ${ACTIVE_MILESTONE:-none} ${ACTIVE_MILESTONE_TARGET:+(target: $ACTIVE_MILESTONE_TARGET)}
+- **Tasks**: $DONE_TASKS / $TOTAL_TASKS done
+- **In-progress tasks**: ${IN_PROGRESS_TASKS[*]:-none}
+- **Assigned tasks**: ${ASSIGNED_TASKS[*]:-none}
+- **Open change requests**: see \`gh pr list\` / \`glab mr list\`
+- **Escalation in flight**: ${ESCALATION_ACTIVE:-none}
+- **Risks**: $RISK_COUNT entries in docs/roadmap/risks.md
+- **Capability log rows**: $CAPABILITY_LOG_ROWS
+
+Run \`atelier-status --json\` for machine-readable output.
+EOF

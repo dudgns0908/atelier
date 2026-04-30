@@ -1,0 +1,104 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -qE '(git +push +(-[a-zA-Z0-9]*f[a-zA-Z0-9]*|--force(-with-lease)?)|git +commit +.*--no-verify|git +push +.* +(main|develop)(\\s|$))' && { echo 'Blocked: forbidden git operation (force-push, --no-verify, or direct push to main/develop). See docs/process/git-flow.md.' >&2; exit 2; } || exit 0"
+          },
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE '^git +checkout +-b +feature/'; then missing=''; for f in docs/templates/operating-preferences-template.md docs/requirements/requirements.md docs/design/architecture.md docs/agents/team-composition.md docs/roadmap/roadmap.md docs/INIT-APPROVAL.md; do [ -s \"$f\" ] || missing=\"$missing $f\"; done; if [ -n \"$missing\" ]; then echo \"Blocked: feature/* branch creation requires the following STEP outputs to exist and be non-empty:$missing\" >&2; exit 2; fi; if ! grep -q '^Approved by user:' docs/INIT-APPROVAL.md; then echo 'Blocked: docs/INIT-APPROVAL.md is present but missing the \"Approved by user:\" line. STEP 5.5 not yet signed off.' >&2; exit 2; fi; fi; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE '^(gh +pr +merge|glab +mr +merge)'; then cr=$(echo \"$cmd\" | grep -oE '[0-9]+' | head -n1); if [ -n \"$cr\" ] && command -v atelier-check-reviews >/dev/null 2>&1; then atelier-check-reviews \"$cr\" >/dev/null 2>&1 || { echo \"Blocked: change request $cr does not have unanimous approval from the three mandatory reviewers. Run 'atelier-check-reviews $cr' to inspect.\" >&2; exit 2; } ; fi ; fi ; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE '^atelier-open-pr +'; then task_id=$(echo \"$cmd\" | awk '{print $2}' | tr '[:upper:]' '[:lower:]'); if [ -n \"$task_id\" ] && [ -d docs/roadmap/tasks ]; then ls docs/roadmap/tasks/${task_id}-*.md >/dev/null 2>&1 || { echo \"Blocked: no task file matching docs/roadmap/tasks/${task_id}-*.md. Have Project Manager create one before opening a change request.\" >&2; exit 2; } ; fi ; fi ; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE '^git +merge +(feature|fix)/' || echo \"$cmd\" | grep -qE '^git +(checkout|switch) +(main|develop) *&&'; then echo 'Blocked: direct git merge of feature/* or fix/* branches. The forge merge path (gh pr merge / glab mr merge) is the ONLY merge route — it triggers atelier-check-reviews + atelier-post-merge. Local-only mode requires a docs/roadmap/reviews/<task-id>.md review file with 3 APPROVED markers and `gh pr merge --merge` against the local-mode adapter (or use atelier-merge-local helper when available). See docs/process/change-review-workflow.md.' >&2; exit 2; fi; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE '^git +push +.*develop'; then echo 'Blocked: pushing merge commits directly to develop bypasses the 3-reviewer gate. Use the forge merge path (gh pr merge / glab mr merge) which auto-runs atelier-check-reviews. See docs/process/change-review-workflow.md.' >&2; exit 2; fi; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -qE '^git +commit' && jq -r '.tool_response.output // empty' | grep -qvE '^[a-z]+(\\([a-z0-9_-]+\\))?!?: .{1,72}$' && echo 'Warning: commit subject does not match Conventional Commits. See docs/process/git-flow.md.' >&2 || true; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -qE '^(gh +pr +merge|glab +mr +merge)' && { command -v atelier-post-merge >/dev/null 2>&1 && atelier-post-merge >&2 || echo 'atelier-post-merge not found on PATH; Technical Writer must run doc sync manually.' >&2; } ; exit 0"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f docs/roadmap/roadmap.md ] && echo 'atelier: project detected. Run /atelier:status for current state.' >&2 || echo 'atelier: no project initialized. Run /atelier:init-project to start.' >&2; exit 0"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f docs/roadmap/roadmap.md ] && current_task=$(ls docs/roadmap/tasks/ 2>/dev/null | grep -v README | grep -iE 'in-progress|active' | head -n1) && [ -n \"$current_task\" ] && echo \"atelier context: active task $current_task\" >&2 ; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "marker='.atelier/last-reload-ack'; mkdir -p .atelier 2>/dev/null; last_ack=0; [ -f \"$marker\" ] && last_ack=$(stat -c %Y \"$marker\" 2>/dev/null || stat -f %m \"$marker\" 2>/dev/null || echo 0); newest=0; for f in $(find .claude/skills .claude/agents .mcp.json -type f -newer \"$marker\" 2>/dev/null); do newest=1; break; done; [ ! -f \"$marker\" ] && [ -d .claude ] && newest=1; if [ \"$newest\" = \"1\" ]; then echo 'atelier: new skill/agent/MCP file detected. Run /reload-plugins to activate, then `touch .atelier/last-reload-ack` to silence this reminder.' >&2; fi; exit 0"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "msg=$(jq -r '.message // empty'); [ -n \"$msg\" ] && command -v atelier-notify >/dev/null 2>&1 && atelier-notify status \"$msg\" >/dev/null 2>&1 || true; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "warn=''; [ -d docs/ssot/decisions ] && draft_adrs=$(grep -lE '^## Status\\s*$|^## Status\\s*Proposed\\s*$' docs/ssot/decisions/adr-*.md 2>/dev/null | wc -l) && [ \"$draft_adrs\" -gt 0 ] && warn=\"$warn $draft_adrs unfinalized ADR(s)\"; [ -f docs/roadmap/lessons-learned.md ] && last_entry=$(grep -c '^### ' docs/roadmap/lessons-learned.md 2>/dev/null || echo 0) && active_milestone=$(ls docs/roadmap/checkpoints/ 2>/dev/null | wc -l || echo 0) && [ \"$last_entry\" -lt \"$active_milestone\" ] && warn=\"$warn lessons-learned behind milestone count\"; [ -n \"$warn\" ] && echo \"atelier PreCompact warning:$warn — persist these to docs before context compaction.\" >&2 ; exit 0"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "log_dir='docs/ssot/session-log'; mkdir -p \"$log_dir\" 2>/dev/null; today=$(date -u +%Y-%m-%d); ts=$(date -u +%Y-%m-%dT%H:%M:%SZ); branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'no-git'); changed=$(git status --short 2>/dev/null | wc -l || echo 0); commits_today=$(git log --since=\"$today 00:00:00\" --oneline 2>/dev/null | wc -l || echo 0); echo \"- $ts | branch=$branch | changed_files=$changed | commits_today=$commits_today\" >> \"$log_dir/${today}.md\" 2>/dev/null || true; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

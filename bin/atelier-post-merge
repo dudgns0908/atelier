@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# atelier-post-merge — run after a change request merge: reconcile docs, prune branches, update changelog.
+#
+# Invoked by hooks/hooks.json on PostToolUse(Bash) matching gh pr merge | glab mr merge.
+# May also be invoked manually: atelier-post-merge [--cr <number>]
+#
+# Actions:
+# 1. Pull latest develop.
+# 2. Delete merged local feature branch if any.
+# 3. Emit a marker line that Claude Code picks up to trigger Technical Writer doc sync.
+#
+# The actual doc reconciliation is performed by the Technical Writer agent, not this script.
+# The script's job is to signal + clean up.
+
+set -euo pipefail
+
+CR_NUMBER=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --cr) CR_NUMBER="$2"; shift 2 ;;
+    --help|-h)
+      sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *) shift ;;
+  esac
+done
+
+# Pull latest develop
+if git rev-parse --verify develop >/dev/null 2>&1; then
+  git fetch origin develop --prune 2>/dev/null || true
+  CURRENT="$(git rev-parse --abbrev-ref HEAD)"
+  if [[ "$CURRENT" == "develop" ]]; then
+    git pull --ff-only 2>/dev/null || true
+  fi
+fi
+
+# Prune merged feature branches
+git fetch --prune 2>/dev/null || true
+if command -v atelier-cleanup-feature >/dev/null 2>&1; then
+  atelier-cleanup-feature 2>/dev/null || true
+fi
+
+TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '::atelier-post-merge::{"ts":"%s","cr":"%s","action":"trigger-doc-sync"}\n' \
+  "$TS" "${CR_NUMBER:-unknown}"
+
+echo "atelier-post-merge: complete. Technical Writer should reconcile docs for CR ${CR_NUMBER:-<unknown>}."

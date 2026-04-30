@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1034 270" role="img" aria-labelledby="title desc">
+  <title id="title">atelier logo</title>
+  <desc id="desc">A slash-command wordmark for atelier with a segmented slash representing parallel review lanes.</desc>
+  <style>
+    .word { fill: #27323A; }
+    @media (prefers-color-scheme: dark) {
+      .word { fill: #F5EFE5; }
+    }
+  </style>
+  <g fill="none" stroke-linecap="round">
+    <path d="M62 210 L100 64" stroke="#24B8B5" stroke-width="22" />
+    <path d="M100 224 L150 46" stroke="#F2A52B" stroke-width="30" />
+    <path d="M152 210 L190 64" stroke="#F28C7A" stroke-width="22" />
+  </g>
+  <text
+    class="word"
+    x="298"
+    y="198"
+    font-family="ui-sans-serif, Inter, Avenir Next, Segoe UI, Helvetica, Arial, sans-serif"
+    font-size="186"
+    font-weight="780"
+    letter-spacing="-5"
+    textLength="688"
+    lengthAdjust="spacingAndGlyphs"
+  >atelier</text>
+</svg>

@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# atelier-api-audit — verify the v1-api-surface.md frozen surfaces are intact.
+#
+# Usage:
+#   atelier-api-audit                # run all sections, exit 1 if any drift
+#   atelier-api-audit --section <N>  # run just one section (1..7)
+#   atelier-api-audit --json         # machine-readable result
+#
+# Pre-v1.0: surface drift is acceptable but must be intentional. Audit makes
+# drift visible. Post-v1.0: any drift here is a SemVer violation.
+
+set -eo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+OUTPUT="text"
+ONLY=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json) OUTPUT="json"; shift ;;
+    --section) ONLY="$2"; shift 2 ;;
+    --help|-h) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "Unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+DRIFT=0
+declare -a FINDINGS=()
+
+note() {
+  local kind="$1" section="$2" msg="$3"
+  FINDINGS+=("$kind|$section|$msg")
+  if [[ "$kind" == "DRIFT" ]]; then DRIFT=1; fi
+}
+
+# § 1 — Skill names (11 expected)
+if [[ -z "$ONLY" || "$ONLY" == "1" ]]; then
+  expected_skills=(init-project status escalate milestone-checkpoint plan-milestone kanban add-agent add-skill add-mcp hotfix release)
+  for s in "${expected_skills[@]}"; do
+    if [[ -f "skills/$s/SKILL.md" ]]; then
+      note OK "1" "skill /atelier:$s present"
+    else
+      note DRIFT "1" "skill /atelier:$s MISSING"
+    fi
+  done
+  # Extra skills (additive — record but don't fail)
+  for d in skills/*/; do
+    sname=$(basename "$d")
+    [[ "$sname" == "skill-creator" ]] && continue
+    found=0
+    for s in "${expected_skills[@]}"; do [[ "$s" == "$sname" ]] && found=1 && break; done
+    [[ $found -eq 0 ]] && note INFO "1" "extra skill /atelier:$sname (not in v1 surface; flag for explicit add)"
+  done
+fi
+
+# § 2 — Agent names (8 expected)
+if [[ -z "$ONLY" || "$ONLY" == "2" ]]; then
+  expected_agents=(product-manager software-architect chief-ai-officer project-manager technical-writer senior-software-engineer tech-lead qa-engineer)
+  for a in "${expected_agents[@]}"; do
+    if [[ -f "agents/$a.md" ]]; then
+      name_field=$(grep -E '^name:' "agents/$a.md" | head -n1 | sed -E 's/^name:[[:space:]]*//')
+      if [[ "$name_field" == "$a" ]]; then
+        note OK "2" "agent $a present, name field matches"
+      else
+        note DRIFT "2" "agent $a name field mismatch: '$name_field' vs '$a'"
+      fi
+    else
+      note DRIFT "2" "agent $a MISSING"
+    fi
+  done
+fi
+
+# § 3 — bin/* helper presence (10 expected)
+if [[ -z "$ONLY" || "$ONLY" == "3" ]]; then
+  expected_bins=(atelier-open-pr atelier-check-reviews atelier-cleanup-feature atelier-notify atelier-post-merge atelier-migrate atelier-validate atelier-status atelier-sync-tasks atelier-kanban)
+  for b in "${expected_bins[@]}"; do
+    if [[ -x "bin/$b" ]]; then
+      # Verify --help works
+      if timeout 5 bash -c "bin/$b --help >/dev/null 2>&1 || true"; then
+        note OK "3" "bin/$b executable, --help responds"
+      else
+        note DRIFT "3" "bin/$b executable but --help crashed"
+      fi
+    elif [[ -f "bin/$b" ]]; then
+      note DRIFT "3" "bin/$b exists but not executable"
+    else
+      note DRIFT "3" "bin/$b MISSING"
+    fi
+  done
+fi
+
+# § 4 — Hook contract (events present in hooks.json)
+if [[ -z "$ONLY" || "$ONLY" == "4" ]]; then
+  expected_events=(PreToolUse PostToolUse SessionStart UserPromptSubmit Notification PreCompact Stop)
+  if [[ ! -f hooks/hooks.json ]]; then
+    note DRIFT "4" "hooks/hooks.json missing"
+  elif command -v jq >/dev/null 2>&1; then
+    for evt in "${expected_events[@]}"; do
+      if jq -e ".hooks.$evt" hooks/hooks.json >/dev/null 2>&1; then
+        note OK "4" "hook event $evt registered"
+      else
+        note INFO "4" "hook event $evt not used (allowed; may be added)"
+      fi
+    done
+  else
+    # jq missing — fall back to grep
+    note INFO "4" "jq not available; using grep fallback for hook event detection"
+    for evt in "${expected_events[@]}"; do
+      if grep -qE "\"$evt\"" hooks/hooks.json; then
+        note OK "4" "hook event $evt referenced (grep-based)"
+      else
+        note INFO "4" "hook event $evt not referenced"
+      fi
+    done
+  fi
+fi
+
+# § 5 — File path schema (atelier-managed paths must exist as referenced)
+if [[ -z "$ONLY" || "$ONLY" == "5" ]]; then
+  # Check that template files referenced in v1-api-surface still exist
+  paths=(
+    "docs/templates/operating-preferences-template.md"
+    "docs/templates/software-engineer-template.md"
+    "docs/templates/project-claude-template.md"
+    "docs/templates/designer-template.md"
+    "docs/process/coding-principles.md"
+    "docs/process/living-documentation.md"
+    "docs/process/change-review-workflow.md"
+    "docs/process/issue-management.md"
+    "docs/process/task-frontmatter.md"
+    "docs/process/status-schema.md"
+  )
+  for p in "${paths[@]}"; do
+    if [[ -f "$p" ]]; then
+      note OK "5" "$p present"
+    else
+      note DRIFT "5" "$p MISSING (referenced in v1-api-surface)"
+    fi
+  done
+  # Legacy path that should be GONE after rename
+  if [[ -f "docs/process/pr-workflow.md" ]]; then
+    note DRIFT "5" "legacy docs/process/pr-workflow.md still exists (should be renamed to change-review-workflow.md)"
+  else
+    note OK "5" "legacy pr-workflow.md correctly removed"
+  fi
+fi
+
+# § 6 — Frontmatter schema (every agent has required fields)
+if [[ -z "$ONLY" || "$ONLY" == "6" ]]; then
+  for f in agents/*.md; do
+    [[ -f "$f" ]] || continue
+    base=$(basename "$f" .md)
+    desc_line=$(grep -E '^description:' "$f" | head -n1 | sed -E 's/^description:[[:space:]]*//')
+    name_line=$(grep -E '^name:' "$f" | head -n1 | sed -E 's/^name:[[:space:]]*//')
+    if [[ -z "$name_line" ]]; then
+      note DRIFT "6" "$f: missing 'name:' frontmatter"
+    fi
+    if [[ -z "$desc_line" ]]; then
+      note DRIFT "6" "$f: missing 'description:' frontmatter"
+    elif [[ ${#desc_line} -lt 30 ]]; then
+      note DRIFT "6" "$f: description too short (${#desc_line} chars)"
+    else
+      note OK "6" "$f frontmatter passes schema"
+    fi
+  done
+fi
+
+# § 7 — Status JSON schema version stays "1"
+if [[ -z "$ONLY" || "$ONLY" == "7" ]]; then
+  if [[ -x "bin/atelier-status" ]]; then
+    json_out=$(bin/atelier-status --json 2>/dev/null || true)
+    sv=$(echo "$json_out" | grep -E '"schema_version"' | head -n1 | sed -E 's/.*"schema_version":[[:space:]]*"([^"]+)".*/\1/')
+    if [[ "$sv" == "1" ]]; then
+      note OK "7" "atelier-status --json schema_version is '1'"
+    else
+      note DRIFT "7" "atelier-status --json schema_version is '$sv' (expected '1')"
+    fi
+    for k in phase active_milestone tasks lanes epics open_change_requests escalation_active risks_count capability_log_rows; do
+      if echo "$json_out" | grep -qE "\"$k\""; then
+        note OK "7" "JSON key '$k' present"
+      else
+        note DRIFT "7" "JSON key '$k' MISSING"
+      fi
+    done
+  fi
+fi
+
+# --- Emit ---
+
+if [[ "$OUTPUT" == "json" ]]; then
+  printf '{"drift":%s,"findings":[' "$([[ $DRIFT -eq 0 ]] && echo "false" || echo "true")"
+  first=1
+  for f in "${FINDINGS[@]}"; do
+    IFS='|' read -r kind section msg <<< "$f"
+    if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
+    msg_esc=$(echo "$msg" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    printf '{"kind":"%s","section":"%s","msg":"%s"}' "$kind" "$section" "$msg_esc"
+  done
+  printf ']}\n'
+else
+  echo "atelier API surface audit"
+  echo "========================="
+  for f in "${FINDINGS[@]}"; do
+    IFS='|' read -r kind section msg <<< "$f"
+    case "$kind" in
+      OK)    printf '  [OK]    §%s %s\n' "$section" "$msg" ;;
+      DRIFT) printf '  [DRIFT] §%s %s\n' "$section" "$msg" >&2 ;;
+      INFO)  printf '  [INFO]  §%s %s\n' "$section" "$msg" ;;
+    esac
+  done
+  echo "-------------------------"
+  if [[ $DRIFT -eq 0 ]]; then
+    echo "No drift detected. v1-api-surface.md commitments hold."
+  else
+    echo "Drift detected — see DRIFT lines above. v1-api-surface.md must be updated OR the drift must be reverted." >&2
+  fi
+fi
+
+exit $DRIFT

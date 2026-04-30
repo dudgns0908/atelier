@@ -1,0 +1,28 @@
+{
+  "name": "atelier",
+  "description": "Universal multi-agent project harness for Claude Code. Run any project — web, data, ML, fintech, CLI — through a structured AI team with rigorous governance, from discovery to release: 8 default agents + project-specific implementers, 11 user skills, 12 hooks across 7 events, 6 hard-enforced gates, GitHub + GitLab forge adapters, machine-readable status JSON, atelier-migrate for safe upgrades, atelier-on-atelier dogfood, and a 3-tier change policy.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Younghun Kim",
+    "email": "dudgns09081@gmail.com"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/dudgns0908/atelier",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dudgns0908/atelier.git"
+  },
+  "keywords": [
+    "multi-agent",
+    "project-management",
+    "governance",
+    "discovery",
+    "roadmap",
+    "code-review",
+    "living-documentation",
+    "kanban",
+    "milestone",
+    "retrospective"
+  ],
+  "category": "development"
+}

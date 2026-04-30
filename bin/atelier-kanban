@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+# atelier-kanban — render the active milestone's tasks as an ASCII kanban board.
+#
+# Usage:
+#   atelier-kanban              # ASCII board grouped by lane
+#   atelier-kanban --json       # JSON (alias for atelier-status --json with lanes-focused output)
+#   atelier-kanban --age <N>    # aged-in-progress threshold in days (default 3)
+#
+# Companion to skills/kanban/SKILL.md (which is the Conductor-instruction
+# version). This binary is for programmatic / CI consumption.
+#
+# Read-only. Never mutates task md files.
+
+set -eo pipefail
+
+OUTPUT="ascii"
+AGE_DAYS="${OPS_AGE_DAYS:-3}"
+WIP_LIMIT="${OPS_WIP_LIMIT:-2}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json) OUTPUT="json"; shift ;;
+    --age)  AGE_DAYS="$2"; shift 2 ;;
+    --wip)  WIP_LIMIT="$2"; shift 2 ;;
+    --help|-h)
+      sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *) echo "Unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+if [[ ! -d docs/roadmap/tasks ]]; then
+  echo "No tasks. Run /atelier:plan-milestone <m-id> to decompose the active milestone." >&2
+  exit 0
+fi
+
+# JSON delegate to atelier-status which already has lanes/epics
+if [[ "$OUTPUT" == "json" ]]; then
+  exec atelier-status --json
+fi
+
+# --- Read tasks into lane buckets ---
+
+declare -A LANES=( [backlog]="" [todo]="" [in_progress]="" [in_review]="" [done]="" )
+declare -A EPICS=()
+declare -a STALE_LANES=()
+declare -a BLOCKED_TASKS=()
+declare -a AGED_TASKS=()
+
+read_field() {
+  local file="$1" key="$2"
+  grep -E "^${key}:" "$file" 2>/dev/null | head -n1 | sed -E "s/^${key}:[[:space:]]*//" || echo ""
+}
+
+resolved_status() {
+  local lane="$1" status="$2"
+  case "$lane:$status" in
+    backlog:|backlog:assigned|backlog:claimed) return 0 ;;
+    todo:assigned|todo:claimed) return 0 ;;
+    in-progress:in-progress|in-progress:active) return 0 ;;
+    in-review:in-progress|in-review:active|in-review:in-review) return 0 ;;
+    done:done|done:completed|done:merged) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+declare -A TASK_DONE
+for t in docs/roadmap/tasks/t*-*.md docs/roadmap/tasks/h*-*.md; do
+  [[ -f "$t" ]] || continue
+  base="$(basename "$t" .md)"
+  id="$(read_field "$t" "id")"
+  title="$(read_field "$t" "title")"
+  lane="$(read_field "$t" "lane")"
+  status="$(read_field "$t" "status")"
+  epic="$(read_field "$t" "epic")"
+
+  display="${id:-$base}"
+  short_title="$(echo "$title" | head -c 18)"
+  cell="$display $short_title"
+
+  case "$lane" in
+    backlog) LANES[backlog]="${LANES[backlog]}${cell}|" ;;
+    todo)    LANES[todo]="${LANES[todo]}${cell}|" ;;
+    in-progress) LANES[in_progress]="${LANES[in_progress]}${cell}|" ;;
+    in-review)   LANES[in_review]="${LANES[in_review]}${cell}|" ;;
+    done) LANES[done]="${LANES[done]}${cell}|"; TASK_DONE[$id]=1 ;;
+  esac
+
+  [[ -n "$epic" ]] && EPICS[$epic]="${EPICS[$epic]:-} $id"
+
+  # Stale lane (lane↔status mismatch)
+  if [[ -n "$lane" && -n "$status" ]] && ! resolved_status "$lane" "$status"; then
+    STALE_LANES+=("$display (lane=$lane, status=$status)")
+  fi
+
+  # Aged in-progress
+  if [[ "$lane" == "in-progress" ]]; then
+    last_modified=$(stat -c %Y "$t" 2>/dev/null || stat -f %m "$t" 2>/dev/null || echo 0)
+    age_days=$(( ($(date +%s) - last_modified) / 86400 ))
+    if [[ $age_days -gt $AGE_DAYS ]]; then
+      AGED_TASKS+=("$display (${age_days}d)")
+    fi
+  fi
+done
+
+# Second pass: blocked detection (after TASK_DONE map is built)
+for t in docs/roadmap/tasks/t*-*.md docs/roadmap/tasks/h*-*.md; do
+  [[ -f "$t" ]] || continue
+  id="$(read_field "$t" "id")"
+  lane="$(read_field "$t" "lane")"
+  [[ "$lane" == "done" ]] && continue
+  deps_line=$(grep -E '^depends_on:' "$t" 2>/dev/null | head -n1 | sed -E 's/^depends_on:[[:space:]]*\[?(.*)\]?[[:space:]]*$/\1/')
+  if [[ -n "$deps_line" && "$deps_line" != "[]" ]]; then
+    IFS=',' read -ra deps <<< "$deps_line"
+    blocked_by=()
+    for dep in "${deps[@]}"; do
+      dep="$(echo "$dep" | tr -d ' "[]')"
+      [[ -z "$dep" ]] && continue
+      [[ -z "${TASK_DONE[$dep]:-}" ]] && blocked_by+=("$dep")
+    done
+    if [[ ${#blocked_by[@]} -gt 0 ]]; then
+      BLOCKED_TASKS+=("$id (waiting on: ${blocked_by[*]})")
+    fi
+  fi
+done
+
+# --- Render ASCII board ---
+
+render_column() {
+  local content="$1"
+  IFS='|' read -ra cells <<< "$content"
+  for cell in "${cells[@]}"; do
+    [[ -z "$cell" ]] && continue
+    printf "%-18s\n" "${cell:0:18}"
+  done
+}
+
+# Compute max column height
+max_h=1
+for lane in backlog todo in_progress in_review done; do
+  IFS='|' read -ra cells <<< "${LANES[$lane]}"
+  count=0
+  for c in "${cells[@]}"; do [[ -n "$c" ]] && count=$((count+1)); done
+  [[ $count -gt $max_h ]] && max_h=$count
+done
+
+cols=("backlog" "todo" "in_progress" "in_review" "done")
+labels=("BACKLOG" "TODO" "IN PROGRESS" "IN REVIEW" "DONE")
+
+# Header
+header=""
+for label in "${labels[@]}"; do
+  header="${header}$(printf '%-18s' "$label") │ "
+done
+echo "${header% │ }"
+
+# Separator
+sep=""
+for _ in "${labels[@]}"; do
+  sep="${sep}──────────────────┼─"
+done
+echo "${sep%┼─}"
+
+# Rows
+declare -A col_cells
+for col in "${cols[@]}"; do
+  IFS='|' read -ra arr <<< "${LANES[$col]}"
+  col_cells[$col]="${arr[*]}"
+done
+
+for ((row = 0; row < max_h; row++)); do
+  line=""
+  for col in "${cols[@]}"; do
+    IFS='|' read -ra cells <<< "${LANES[$col]}"
+    cell="${cells[$row]:-}"
+    line="${line}$(printf '%-18s' "${cell:0:18}") │ "
+  done
+  echo "${line% │ }"
+done
+
+# WIP indicator
+in_progress_count=0
+for cell in "${col_cells[in_progress]}"; do [[ -n "$cell" ]] && in_progress_count=$((in_progress_count+1)); done
+echo ""
+if [[ $in_progress_count -gt $WIP_LIMIT ]]; then
+  echo "⚠️  WIP overflow: in-progress $in_progress_count > limit $WIP_LIMIT"
+else
+  echo "WIP: in-progress $in_progress_count/$WIP_LIMIT ✅"
+fi
+
+# Epics summary
+if [[ ${#EPICS[@]} -gt 0 ]]; then
+  echo ""
+  echo "Epics:"
+  for epic in "${!EPICS[@]}"; do
+    echo "  · $epic:${EPICS[$epic]}"
+  done
+fi
+
+# Signals
+echo ""
+echo "Signals:"
+if [[ ${#STALE_LANES[@]} -gt 0 ]]; then
+  echo "  ⚠️  Stale lane (lane↔status mismatch):"
+  for s in "${STALE_LANES[@]}"; do echo "      - $s"; done
+fi
+if [[ ${#AGED_TASKS[@]} -gt 0 ]]; then
+  echo "  ⏳ Aged in-progress (> ${AGE_DAYS}d without commit):"
+  for a in "${AGED_TASKS[@]}"; do echo "      - $a"; done
+fi
+if [[ ${#BLOCKED_TASKS[@]} -gt 0 ]]; then
+  echo "  🔗 Blocked (deps unresolved):"
+  for b in "${BLOCKED_TASKS[@]}"; do echo "      - $b"; done
+fi
+[[ ${#STALE_LANES[@]} -eq 0 && ${#AGED_TASKS[@]} -eq 0 && ${#BLOCKED_TASKS[@]} -eq 0 ]] && echo "  (none)"
+
+# GitHub Projects v2 URL hint
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && [[ -f docs/process/operating-preferences-template.md ]]; then
+  if grep -qE '^\| \*?\*?H\.1\*?\*? \|.*Yes' docs/process/operating-preferences-template.md 2>/dev/null; then
+    repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)
+    if [[ -n "$repo" ]]; then
+      echo ""
+      echo "GitHub Projects v2 (drag-drop): https://github.com/$repo/projects"
+    fi
+  fi
+fi

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "atelier",
+  "description": "Single-plugin marketplace for atelier — universal multi-agent project harness for Claude Code. Add via: /plugin marketplace add dudgns0908/atelier ; then: /plugin install atelier@atelier.",
+  "owner": {
+    "name": "Younghun Kim",
+    "email": "dudgns09081@gmail.com"
+  },
+  "metadata": {
+    "description": "atelier — universal multi-agent project harness for Claude Code. This marketplace surfaces the single atelier plugin from its source repository.",
+    "version": "1.0.0",
+    "homepage": "https://github.com/dudgns0908/atelier"
+  },
+  "plugins": [
+    {
+      "name": "atelier",
+      "description": "Universal multi-agent project harness for Claude Code. Run any project through a structured AI team with rigorous governance, from discovery to release.",
+      "author": {
+        "name": "Younghun Kim",
+        "email": "dudgns09081@gmail.com"
+      },
+      "category": "development",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/dudgns0908/atelier",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/dudgns0908/atelier.git"
+      },
+      "keywords": [
+        "multi-agent",
+        "project-management",
+        "governance",
+        "discovery",
+        "roadmap",
+        "code-review",
+        "living-documentation",
+        "kanban",
+        "milestone",
+        "retrospective"
+      ]
+    }
+  ]
+}

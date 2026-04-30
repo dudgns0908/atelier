@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# atelier-open-pr — open a change request (PR/MR) against develop with the plugin's standard template.
+#
+# Usage: atelier-open-pr <TASK-ID> "<intent>" [--type <conventional-type>] [--forge <github|gitlab>]
+#   TASK-ID: e.g., T07
+#   intent:  short imperative, e.g., "add JWT login"
+#   --type:  conventional commit type for the title (default: feat)
+#   --forge: override forge detection (default: read from operating-preferences.md)
+#
+# Must be run from a feature/<task-id>-<slug> branch that has been pushed.
+# Forge detection order: --forge flag > operating-preferences.md > presence of gh/glab CLI > fail.
+
+set -euo pipefail
+
+TYPE="feat"
+TASK_ID=""
+INTENT=""
+FORGE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --type) TYPE="$2"; shift 2 ;;
+    --forge) FORGE="$2"; shift 2 ;;
+    *)
+      if [[ -z "$TASK_ID" ]]; then TASK_ID="$1"
+      elif [[ -z "$INTENT" ]]; then INTENT="$1"
+      else echo "Unexpected arg: $1" >&2; exit 1
+      fi
+      shift ;;
+  esac
+done
+
+if [[ -z "$TASK_ID" || -z "$INTENT" ]]; then
+  echo "Usage: atelier-open-pr <TASK-ID> \"<intent>\" [--type <type>] [--forge github|gitlab]" >&2
+  exit 1
+fi
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [[ ! "$BRANCH" =~ ^feature/ ]]; then
+  echo "Refusing to open change request from non-feature branch: $BRANCH" >&2
+  exit 1
+fi
+
+# Forge resolution
+PREF_FILE="docs/templates/operating-preferences-template.md"
+if [[ -z "$FORGE" && -f "$PREF_FILE" ]]; then
+  FORGE_LINE="$(grep -iE '^\*\*Forge:\*\*' "$PREF_FILE" | head -n1 | sed 's/^.*\*\*Forge:\*\* *//' | tr '[:upper:]' '[:lower:]' || true)"
+  case "$FORGE_LINE" in
+    *github*) FORGE="github" ;;
+    *gitlab*) FORGE="gitlab" ;;
+    *bitbucket*) FORGE="bitbucket" ;;
+    *gerrit*) FORGE="gerrit" ;;
+  esac
+fi
+if [[ -z "$FORGE" ]]; then
+  if command -v gh >/dev/null 2>&1; then FORGE="github"
+  elif command -v glab >/dev/null 2>&1; then FORGE="gitlab"
+  else echo "Cannot detect forge. Set section H in $PREF_FILE or pass --forge." >&2; exit 1
+  fi
+fi
+
+TASK_LOWER="$(echo "$TASK_ID" | tr '[:upper:]' '[:lower:]')"
+TASK_FILE_GLOB="docs/roadmap/tasks/${TASK_LOWER}-*.md"
+TASK_FILE="$(ls $TASK_FILE_GLOB 2>/dev/null | head -n1 || true)"
+
+TITLE="[${TASK_ID}] ${TYPE}: ${INTENT}"
+
+BODY="$(cat <<EOF
+## Purpose
+${INTENT}
+
+## Roadmap Link
+${TASK_FILE:-<fill in: docs/roadmap/tasks/${TASK_LOWER}-*.md>}
+
+## Changes
+- <bulleted list of changes>
+
+## Related Docs
+- docs/requirements/requirements.md
+- docs/design/architecture.md
+
+## Review Checklist
+- [ ] Senior Software Engineer — code quality
+- [ ] Tech Lead — architectural alignment
+- [ ] QA Engineer — requirements & roadmap alignment
+EOF
+)"
+
+case "$FORGE" in
+  github)
+    gh auth status >/dev/null 2>&1 || { echo "Not authenticated to GitHub. Run: gh auth login" >&2; exit 1; }
+    gh pr create --base develop --head "$BRANCH" --title "$TITLE" --body "$BODY" ;;
+  gitlab)
+    glab auth status >/dev/null 2>&1 || { echo "Not authenticated to GitLab. Run: glab auth login" >&2; exit 1; }
+    glab mr create --target-branch develop --source-branch "$BRANCH" --title "$TITLE" --description "$BODY" --yes ;;
+  bitbucket|gerrit)
+    echo "Forge '$FORGE' adapter not yet implemented in v0.1. Open the change request manually using the body below:" >&2
+    echo "---" >&2
+    echo "Title: $TITLE" >&2
+    echo "$BODY" >&2
+    exit 2 ;;
+  *)
+    echo "Unknown forge: $FORGE" >&2; exit 1 ;;
+esac

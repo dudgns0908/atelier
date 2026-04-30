@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# atelier-notify — route a notification to the configured external channel (Slack, Discord, etc.)
+# If no channel is configured, fall back to CLI stdout.
+#
+# Usage: atelier-notify <category> "<message>"
+#   category: approval | checkpoint | risk | status | error
+#
+# Reads target from docs/templates/operating-preferences-template.md section G.
+# Actual delivery relies on an externally installed MCP server or webhook; this script
+# simply emits a structured marker the enclosing Claude Code session can route.
+
+set -euo pipefail
+
+CATEGORY="${1:-status}"
+MESSAGE="${2:-}"
+
+if [[ -z "$MESSAGE" ]]; then
+  echo "Usage: atelier-notify <category> \"<message>\"" >&2
+  exit 1
+fi
+
+PREF_FILE="docs/templates/operating-preferences-template.md"
+
+CHANNEL="CLI-only"
+if [[ -f "$PREF_FILE" ]]; then
+  CHOSEN="$(awk '/^## G\. Communication Channel/{flag=1;next} /^## /{flag=0} flag && /\*\*Chosen:\*\*/{sub(/^.*\*\*Chosen:\*\* */,""); print; exit}' "$PREF_FILE" || true)"
+  [[ -n "$CHOSEN" ]] && CHANNEL="$CHOSEN"
+fi
+
+TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+printf '::atelier-notify::{"ts":"%s","category":"%s","channel":"%s","message":%s}\n' \
+  "$TS" "$CATEGORY" "$CHANNEL" "$(printf '%s' "$MESSAGE" | jq -Rs .)"

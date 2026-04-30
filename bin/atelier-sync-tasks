@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# atelier-sync-tasks — mirror docs/roadmap/tasks/*.md to forge issues.
+#
+# Usage:
+#   atelier-sync-tasks              # dry-run (default); shows what would change
+#   atelier-sync-tasks --apply      # actually create/update issues
+#   atelier-sync-tasks --task t05   # sync just one task
+#
+# Single source of truth: the task md file. The forge issue is a one-way
+# mirror — manual edits in the issue UI are overwritten on next --apply.
+# To change a task, edit the md file.
+#
+# Forge support:
+#   - GitHub (gh CLI)
+#   - GitLab (glab) — TBD; emits "not yet implemented" per existing adapter pattern
+#   - Bitbucket / Gerrit / local-only — no-op (no issue tracker mirror)
+
+set -eo pipefail
+
+PROJECT_ROOT="$(pwd)"
+APPLY=0
+ONE_TASK=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --apply) APPLY=1; shift ;;
+    --task)  ONE_TASK="$2"; shift 2 ;;
+    --help|-h)
+      sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *) echo "Unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+if [[ ! -d docs/roadmap/tasks ]]; then
+  echo "No docs/roadmap/tasks/ — nothing to sync." >&2
+  exit 0
+fi
+
+# Detect forge from operating preferences (or fallback)
+FORGE="github"
+if [[ -f docs/process/operating-preferences-template.md ]]; then
+  FORGE_LINE="$(grep -E '^\| \*?\*?H\.' docs/process/operating-preferences-template.md 2>/dev/null | head -n1 || true)"
+  case "$FORGE_LINE" in
+    *GitLab*|*gitlab*) FORGE="gitlab" ;;
+    *Bitbucket*|*bitbucket*) FORGE="bitbucket" ;;
+    *Gerrit*|*gerrit*) FORGE="gerrit" ;;
+    *Local*|*local*) FORGE="local" ;;
+    *) FORGE="github" ;;
+  esac
+fi
+
+case "$FORGE" in
+  github)
+    command -v gh >/dev/null 2>&1 || { echo "gh CLI not installed; cannot sync to GitHub Issues." >&2; exit 1; }
+    gh auth status >/dev/null 2>&1 || { echo "Not authenticated to GitHub. Run: gh auth login" >&2; exit 1; }
+    ;;
+  gitlab|bitbucket|gerrit)
+    echo "Forge '$FORGE' adapter not yet implemented in v0.3. Edit task md files; do not expect issue mirror." >&2
+    exit 2
+    ;;
+  local)
+    echo "Local-only mode — no forge issue tracker. Tasks live as md files only." >&2
+    exit 0
+    ;;
+  *)
+    echo "Unknown forge: $FORGE" >&2; exit 1
+    ;;
+esac
+
+# --- Helpers ---
+
+read_field() {
+  local file="$1" key="$2"
+  grep -E "^${key}:" "$file" 2>/dev/null | head -n1 | sed -E "s/^${key}:[[:space:]]*//" || echo ""
+}
+
+read_list() {
+  local file="$1" key="$2"
+  awk -v key="$key" '
+    BEGIN{found=0}
+    /^---/ {if (found==2) exit; found++; next}
+    found==1 && $0 ~ "^"key":" {inlist=1; sub(/^[^:]+:[[:space:]]*/, ""); if (length($0)) print; next}
+    inlist && /^[[:space:]]*-[[:space:]]/ {sub(/^[[:space:]]*-[[:space:]]*/, ""); print; next}
+    inlist {inlist=0}
+  ' "$file"
+}
+
+build_issue_body() {
+  local md_path="$1" id="$2" title="$3"
+  cat <<BODY
+**Tracking**: \`$md_path\`
+
+This issue is auto-mirrored from the task file. **Do not edit here** — edit the md file and re-run \`atelier-sync-tasks --apply\`.
+
+## Description
+$(awk '/^## Description/,/^## /{if (!/^## /) print}' "$md_path" 2>/dev/null | tail -n +2 | head -n 20)
+
+## Acceptance Criteria
+$(read_list "$md_path" "acceptance" | sed 's/^/- /')
+
+## Linked
+- Requirement: $(read_field "$md_path" "linked_requirement" | sed 's|^|`|;s|$|`|;s|^\`\`$|n/a|')
+- Design: $(read_field "$md_path" "linked_design" | sed 's|^|`|;s|$|`|;s|^\`\`$|n/a|')
+- Depends on: $(read_list "$md_path" "depends_on" | tr '\n' ' ' | sed 's/[[:space:]]*$//' | sed 's/^$/none/')
+
+---
+*Last synced: $(date -u +%Y-%m-%dT%H:%M:%SZ) by atelier-sync-tasks*
+BODY
+}
+
+build_labels() {
+  local md_path="$1"
+  local lane epic
+  lane="$(read_field "$md_path" "lane")"
+  epic="$(read_field "$md_path" "epic")"
+  local labels="kind:task"
+  [[ -n "$lane" ]] && labels="$labels,lane:$lane"
+  [[ -n "$epic" ]] && labels="$labels,epic:$epic"
+  echo "$labels"
+}
+
+# --- Main loop ---
+
+CHANGED=0
+for md in docs/roadmap/tasks/t*-*.md docs/roadmap/tasks/h*-*.md; do
+  [[ -f "$md" ]] || continue
+  base="$(basename "$md" .md)"
+
+  if [[ -n "$ONE_TASK" && "$base" != "$ONE_TASK"* ]]; then
+    continue
+  fi
+
+  id="$(read_field "$md" "id")"
+  title="$(read_field "$md" "title")"
+  linked_issue="$(read_field "$md" "linked_issue")"
+  labels="$(build_labels "$md")"
+  body="$(build_issue_body "$md" "$id" "$title")"
+
+  if [[ -z "$linked_issue" ]]; then
+    echo "[CREATE] $base — $title  (labels: $labels)"
+    if [[ "$APPLY" -eq 1 ]]; then
+      issue_url=$(gh issue create --title "[$id] $title" --body "$body" --label "$labels" 2>&1 | tail -n1)
+      issue_num=$(echo "$issue_url" | grep -oE '[0-9]+$' || true)
+      if [[ -n "$issue_num" ]]; then
+        if grep -q '^linked_issue:' "$md"; then
+          sed -i "s|^linked_issue:.*|linked_issue: $issue_num|" "$md"
+        else
+          sed -i "/^---$/,/^---$/{/^---$/{x;/^$/!{p;d};x};/^---$/!{x;/^$/{x;s|.*|linked_issue: '"$issue_num"'\\n&|;p;d};x}}" "$md" 2>/dev/null || \
+          awk -v num="$issue_num" '/^---$/ && !done {n++; if (n==2) {print "linked_issue: " num; done=1}; print; next} {print}' "$md" > "$md.tmp" && mv "$md.tmp" "$md"
+        fi
+        echo "  -> created issue #$issue_num; linked_issue updated in $md"
+        CHANGED=$((CHANGED + 1))
+      else
+        echo "  -> failed to extract issue number from: $issue_url" >&2
+      fi
+    fi
+  else
+    echo "[UPDATE] $base — $title (issue #$linked_issue)"
+    if [[ "$APPLY" -eq 1 ]]; then
+      gh issue edit "$linked_issue" --title "[$id] $title" --body "$body" --add-label "$labels" >/dev/null 2>&1 && \
+        echo "  -> updated #$linked_issue" || \
+        echo "  -> failed to update #$linked_issue" >&2
+      CHANGED=$((CHANGED + 1))
+    fi
+  fi
+done
+
+if [[ "$APPLY" -eq 0 ]]; then
+  echo ""
+  echo "(dry-run; pass --apply to actually create/update issues)"
+fi
+echo "Tasks processed: $CHANGED"

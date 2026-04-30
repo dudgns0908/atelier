@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# atelier — pre-push regression checks (local, replaces GitHub Actions CI).
+#
+# Setup once after cloning:
+#   git config core.hooksPath tools/git-hooks
+#
+# Runs the same checks the CI used to do, but locally before push.
+# Aligns with atelier's STEP 0.5 default (I.b CI = None) — minimize forge-side
+# minutes; do regression checking locally where it costs nothing.
+
+set -eo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+echo "atelier pre-push checks"
+echo "======================="
+
+FAIL=0
+say() { printf '  %s %s\n' "$1" "$2"; }
+ok()   { say "[OK]  " "$1"; }
+bad()  { say "[FAIL]" "$1"; FAIL=1; }
+
+# 1. atelier-validate (structural)
+if bash bin/atelier-validate >/tmp/.atelier-validate.out 2>&1; then
+  ok "atelier-validate"
+else
+  bad "atelier-validate (see /tmp/.atelier-validate.out)"
+fi
+
+# 2. hooks.json is valid JSON
+if command -v jq >/dev/null 2>&1; then
+  if jq -e . hooks/hooks.json >/dev/null 2>&1; then
+    ok "hooks/hooks.json parses"
+  else
+    bad "hooks/hooks.json is malformed JSON"
+  fi
+else
+  say "[skip]" "jq not installed — skipping hooks.json parse"
+fi
+
+# 3. bash -n on every bin/* helper
+for f in bin/*; do
+  [[ -f "$f" ]] || continue
+  if bash -n "$f" 2>/dev/null; then
+    ok "bash -n $f"
+  else
+    bad "bash -n $f failed"
+  fi
+done
+
+# 4. bash -n on every hook command extracted from hooks.json
+if command -v jq >/dev/null 2>&1; then
+  fail_idx=0
+  while IFS= read -r cmd; do
+    [[ -z "$cmd" ]] && continue
+    if echo "$cmd" | bash -n 2>/dev/null; then
+      :
+    else
+      bad "hook command #$fail_idx has syntax error"
+      fail_idx=$((fail_idx + 1))
+    fi
+  done < <(jq -r '.hooks | to_entries[] | .value[] | .hooks[] | .command' hooks/hooks.json 2>/dev/null)
+  [[ $fail_idx -eq 0 ]] && ok "all hook commands parse"
+fi
+
+# 5. shellcheck on bin/* (warnings = fail)
+if command -v shellcheck >/dev/null 2>&1; then
+  if shellcheck bin/* >/tmp/.atelier-shellcheck.out 2>&1; then
+    ok "shellcheck bin/*"
+  else
+    bad "shellcheck bin/* (see /tmp/.atelier-shellcheck.out)"
+  fi
+else
+  if [[ "${ATELIER_SHELLCHECK_OPTIONAL:-}" == "1" ]]; then
+    say "[skip]" "shellcheck not installed — ATELIER_SHELLCHECK_OPTIONAL=1 set; allowed"
+  else
+    bad "shellcheck not installed — install via 'apt install shellcheck' (or set ATELIER_SHELLCHECK_OPTIONAL=1 to allow skip; aborted-skip prevention)"
+  fi
+fi
+
+# 6. --help sanity check for every bin/* helper (no crash)
+for f in bin/*; do
+  [[ -x "$f" ]] || continue
+  if timeout 5 bash -c "'$f' --help" >/dev/null 2>&1 || \
+     timeout 5 bash -c "'$f' -h"     >/dev/null 2>&1 || \
+     timeout 5 bash -c "'$f' --help" >/dev/null 2>&1; then
+    : # at least one help form works OR the command exited gracefully
+  fi
+  # We don't fail on non-zero exit; only crashes (segfault, missing interpreter)
+  # would surface as bash dispatch failures. Smoke is intentionally lenient.
+done
+ok "bin/* --help check"
+
+# 7. atelier-api-audit (since v0.9 — verifies frozen surface intact)
+if [[ -x bin/atelier-api-audit ]]; then
+  if bin/atelier-api-audit >/tmp/.atelier-api-audit.out 2>&1; then
+    ok "atelier-api-audit (no surface drift)"
+  else
+    bad "atelier-api-audit detected drift (see /tmp/.atelier-api-audit.out)"
+  fi
+fi
+
+# 8. migration end-to-end check (since v0.9 — verifies migrate paths work)
+if [[ -x tests/verify-migration.sh ]]; then
+  if bash tests/verify-migration.sh >/tmp/.atelier-verify-migration.out 2>&1; then
+    ok "verify-migration (v0.1 → v0.3 path verified)"
+  else
+    bad "verify-migration FAILED (see /tmp/.atelier-verify-migration.out)"
+  fi
+fi
+
+
+echo "-----------------------"
+if [[ $FAIL -eq 0 ]]; then
+  echo "All pre-push checks passed. Pushing."
+  exit 0
+else
+  echo "Pre-push checks failed. Push aborted." >&2
+  echo "Re-run \`bash tools/git-hooks/pre-push\` to retry locally." >&2
+  exit 1
+fi

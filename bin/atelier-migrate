@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# atelier-migrate — migrate a project's atelier artifacts between plugin versions.
+#
+# Usage:
+#   atelier-migrate --from <version> --to <version> [--apply]
+#   atelier-migrate --auto [--apply]   # detect FROM from project, TO from plugin
+#
+# Default is dry-run. Pass --apply to mutate files.
+# Migrations are append-only — each version pair has a registered procedure below.
+# Logs land at docs/ssot/migrations/<timestamp>-<from>-to-<to>.md.
+
+set -eo pipefail
+
+FROM=""
+TO=""
+APPLY=0
+AUTO=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from) FROM="$2"; shift 2 ;;
+    --to) TO="$2"; shift 2 ;;
+    --apply) APPLY=1; shift ;;
+    --auto) AUTO=1; shift ;;
+    --help|-h)
+      sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) echo "Unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+# --- Auto-detect FROM and TO ---
+if [[ "$AUTO" -eq 1 ]]; then
+  if [[ -f docs/INIT-APPROVAL.md ]]; then
+    FROM="$(grep -E '^Atelier plugin version:' docs/INIT-APPROVAL.md 2>/dev/null | head -n1 | sed -E 's/^Atelier plugin version:[[:space:]]*//' || echo '')"
+  fi
+  if [[ -z "$FROM" ]]; then
+    echo "Cannot auto-detect source version. Run with --from <version> or add 'Atelier plugin version: x.y.z' to docs/INIT-APPROVAL.md" >&2
+    exit 1
+  fi
+  PLUGIN_MANIFEST=""
+  for cand in "$(dirname "$0")/../.claude-plugin/plugin.json" \
+              "$HOME/.claude/plugins/atelier/.claude-plugin/plugin.json"; do
+    if [[ -f "$cand" ]]; then PLUGIN_MANIFEST="$cand"; break; fi
+  done
+  if [[ -z "$PLUGIN_MANIFEST" ]]; then
+    echo "Cannot locate plugin manifest. Run with --to <version>." >&2
+    exit 1
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    TO="$(jq -r '.version' "$PLUGIN_MANIFEST")"
+  else
+    TO="$(grep -E '"version"' "$PLUGIN_MANIFEST" | head -n1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+  fi
+fi
+
+if [[ -z "$FROM" || -z "$TO" ]]; then
+  echo "Usage: atelier-migrate --from <version> --to <version> [--apply]" >&2
+  echo "       atelier-migrate --auto [--apply]" >&2
+  exit 1
+fi
+
+# --- Logging setup ---
+LOG_DIR="docs/ssot/migrations"
+TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+LOG_FILE="$LOG_DIR/${TIMESTAMP}-${FROM}-to-${TO}.md"
+
+log_init() {
+  if [[ "$APPLY" -eq 1 ]]; then
+    mkdir -p "$LOG_DIR"
+    {
+      echo "# Migration: $FROM → $TO"
+      echo ""
+      echo "- Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      echo "- Mode: apply"
+      echo ""
+      echo "## Steps"
+      echo ""
+    } > "$LOG_FILE"
+  fi
+}
+
+log_step() {
+  local msg="$1"
+  echo "  $msg"
+  if [[ "$APPLY" -eq 1 ]]; then
+    echo "- $msg" >> "$LOG_FILE"
+  fi
+}
+
+# --- Migration procedures ---
+
+migrate_noop() {
+  echo "No changes required between $FROM and $TO."
+}
+
+migrate_0_1_to_0_2() {
+  echo "Migration steps for 0.1 → 0.2:"
+  # Detect old pr-workflow.md references (replaced in v0.3.3).
+  if grep -lE 'docs/process/pr-workflow\.md' --include='*.md' -r docs/ 2>/dev/null | grep -q .; then
+    log_step "Update references: docs/process/pr-workflow.md → docs/process/change-review-workflow.md"
+    if [[ "$APPLY" -eq 1 ]]; then
+      grep -lE 'docs/process/pr-workflow\.md' -r docs/ 2>/dev/null | while read -r f; do
+        sed -i 's|docs/process/pr-workflow\.md|docs/process/change-review-workflow.md|g' "$f"
+      done
+    fi
+  fi
+  if [[ -f docs/INIT-APPROVAL.md ]] && ! grep -q '^Atelier plugin version:' docs/INIT-APPROVAL.md 2>/dev/null; then
+    log_step "Add 'Atelier plugin version: $FROM' to docs/INIT-APPROVAL.md (for future migrations)"
+    if [[ "$APPLY" -eq 1 ]]; then
+      printf '\nAtelier plugin version: %s\n' "$FROM" >> docs/INIT-APPROVAL.md
+    fi
+  fi
+  if [[ -d docs/agents/agent-specs ]]; then
+    log_step "Remove deprecated docs/agents/agent-specs/ (.claude/agents/* is now the SSOT)"
+    if [[ "$APPLY" -eq 1 ]]; then
+      rm -rf docs/agents/agent-specs
+    fi
+  fi
+}
+
+migrate_0_2_to_0_3() {
+  echo "Migration steps for 0.2 → 0.3:"
+  log_step "(no breaking renames; additive — new agent template designer-template.md available, no migration action)"
+}
+
+migrate_unknown() {
+  echo "No migration script registered for $FROM → $TO." >&2
+  echo "See meta/version-history.md for manual steps." >&2
+  exit 2
+}
+
+# --- Dispatch ---
+
+echo "Migration: $FROM → $TO"
+if [[ "$APPLY" -eq 0 ]]; then
+  echo "(dry-run; pass --apply to mutate files)"
+fi
+echo ""
+log_init
+
+# Normalize for case matching (strip patch level)
+FROM_MAJ="$(echo "$FROM" | awk -F. '{print $1"."$2}')"
+TO_MAJ="$(echo "$TO" | awk -F. '{print $1"."$2}')"
+
+case "$FROM_MAJ->$TO_MAJ" in
+  "$FROM_MAJ->$FROM_MAJ") migrate_noop ;;
+  "0.1->0.2")             migrate_0_1_to_0_2 ;;
+  "0.2->0.3")             migrate_0_2_to_0_3 ;;
+  "0.1->0.3")             migrate_0_1_to_0_2 ; migrate_0_2_to_0_3 ;;
+  *)                      migrate_unknown ;;
+esac
+
+if [[ "$APPLY" -eq 1 ]]; then
+  echo "" >> "$LOG_FILE"
+  echo "- Completed: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$LOG_FILE"
+  echo ""
+  echo "Log: $LOG_FILE"
+fi

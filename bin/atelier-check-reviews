@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# atelier-check-reviews — verify a change request has approvals from all three mandatory reviewers.
+#
+# Usage: atelier-check-reviews <CR-NUMBER> [--policy unanimous|majority] [--forge github|gitlab]
+# Exit 0 if merge is allowed; exit 2 otherwise.
+#
+# Forge detection order: --forge flag > operating-preferences.md > gh/glab CLI presence.
+
+set -euo pipefail
+
+PR=""
+POLICY="unanimous"
+FORGE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --policy) POLICY="$2"; shift 2 ;;
+    --forge) FORGE="$2"; shift 2 ;;
+    *)
+      if [[ -z "$PR" ]]; then PR="$1"; fi
+      shift ;;
+  esac
+done
+
+if [[ -z "$PR" ]]; then
+  echo "Usage: atelier-check-reviews <CR-NUMBER> [--policy unanimous|majority] [--forge github|gitlab]" >&2
+  exit 1
+fi
+
+# --- Forge resolution (mirror atelier-open-pr) ---
+PREF_FILE="docs/templates/operating-preferences-template.md"
+if [[ -z "$FORGE" && -f "$PREF_FILE" ]]; then
+  FORGE_LINE="$(grep -iE '^\*\*Forge:\*\*' "$PREF_FILE" | head -n1 | sed 's/^.*\*\*Forge:\*\* *//' | tr '[:upper:]' '[:lower:]' || true)"
+  case "$FORGE_LINE" in
+    *github*) FORGE="github" ;;
+    *gitlab*) FORGE="gitlab" ;;
+    *bitbucket*) FORGE="bitbucket" ;;
+    *gerrit*) FORGE="gerrit" ;;
+  esac
+fi
+if [[ -z "$FORGE" ]]; then
+  if command -v gh >/dev/null 2>&1; then FORGE="github"
+  elif command -v glab >/dev/null 2>&1; then FORGE="gitlab"
+  else echo "Cannot detect forge. Set section H in $PREF_FILE or pass --forge." >&2; exit 1
+  fi
+fi
+
+REQUIRED=("senior-software-engineer" "tech-lead" "qa-engineer")
+
+# --- Fetch approvers per forge ---
+APPROVERS=""
+case "$FORGE" in
+  github)
+    if ! command -v gh >/dev/null 2>&1; then
+      echo "gh CLI not found." >&2; exit 1
+    fi
+    gh auth status >/dev/null 2>&1 || { echo "Not authenticated to GitHub. Run: gh auth login" >&2; exit 1; }
+    APPROVERS="$(gh pr view "$PR" --json reviews --jq '.reviews[] | select(.state=="APPROVED") | .author.login' | sort -u)"
+    ;;
+  gitlab)
+    if ! command -v glab >/dev/null 2>&1; then
+      echo "glab CLI not found." >&2; exit 1
+    fi
+    glab auth status >/dev/null 2>&1 || { echo "Not authenticated to GitLab. Run: glab auth login" >&2; exit 1; }
+    # Prefer approval_state (per-rule approvers); fall back to flat approvals.
+    APPROVERS="$(glab api "projects/:fullpath/merge_requests/${PR}/approval_state" 2>/dev/null \
+      | jq -r '[.rules[]?.approved_by[]?.user?.username] | unique[]' 2>/dev/null || true)"
+    if [[ -z "$APPROVERS" ]]; then
+      APPROVERS="$(glab api "projects/:fullpath/merge_requests/${PR}/approvals" 2>/dev/null \
+        | jq -r '.approved_by[]?.user?.username' | sort -u || true)"
+    fi
+    ;;
+  bitbucket|gerrit)
+    echo "Forge '$FORGE' adapter not yet implemented in v0.1. Verify approvals manually:" >&2
+    echo "  Required reviewers: ${REQUIRED[*]}" >&2
+    exit 2 ;;
+  *)
+    echo "Unknown forge: $FORGE" >&2; exit 1 ;;
+esac
+
+# --- Match against required reviewers ---
+approvals=0
+declare -A seen
+while IFS= read -r author; do
+  [[ -z "$author" ]] && continue
+  for req in "${REQUIRED[@]}"; do
+    if [[ "$author" == "$req" && -z "${seen[$req]:-}" ]]; then
+      seen[$req]=1
+      approvals=$((approvals+1))
+    fi
+  done
+done <<< "$APPROVERS"
+
+# --- Apply policy ---
+case "$POLICY" in
+  unanimous)
+    if [[ $approvals -eq 3 ]]; then
+      echo "All three mandatory reviewers approved (forge: $FORGE)."
+      exit 0
+    else
+      echo "Missing approvals. Got $approvals/3 (forge: $FORGE). Required: ${REQUIRED[*]}." >&2
+      exit 2
+    fi ;;
+  majority)
+    if [[ $approvals -ge 2 ]]; then
+      echo "Majority (2-of-3) satisfied: $approvals/3 (forge: $FORGE)."
+      exit 0
+    else
+      echo "Majority not met. Got $approvals/3 (forge: $FORGE)." >&2
+      exit 2
+    fi ;;
+  *)
+    echo "Unknown policy: $POLICY" >&2
+    exit 1 ;;
+esac

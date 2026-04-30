@@ -1,0 +1,234 @@
+#!/usr/bin/env bash
+# atelier-validate — validate the plugin's own structure and manifest.
+# Exits 0 if valid, 1 if problems found. Prints a checklist.
+
+set -eo pipefail
+
+PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PLUGIN_ROOT"
+
+FAIL=0
+pass() { printf '  [OK]   %s\n' "$1"; }
+fail() { printf '  [FAIL] %s\n' "$1" >&2; FAIL=1; }
+
+echo "Validating atelier plugin at: $PLUGIN_ROOT"
+echo
+
+# Self-check (m01 tech debt: validate the validator before trusting its output)
+echo "# Self-check"
+[[ -x "$0" ]] && pass "atelier-validate is executable" || fail "atelier-validate exists but not executable"
+[[ -f "$0" ]] && pass "atelier-validate file present" || fail "atelier-validate file missing (impossible if running)"
+if bash -n "$0" 2>/dev/null; then pass "atelier-validate has valid bash syntax"
+else fail "atelier-validate has bash syntax error (somehow ran anyway?)"; fi
+
+echo
+echo "# Manifest"
+if [[ -f .claude-plugin/plugin.json ]]; then pass ".claude-plugin/plugin.json exists"
+else fail ".claude-plugin/plugin.json missing"; fi
+
+if command -v jq >/dev/null 2>&1 && [[ -f .claude-plugin/plugin.json ]]; then
+  name="$(jq -r '.name' .claude-plugin/plugin.json 2>/dev/null || echo "")"
+  desc="$(jq -r '.description' .claude-plugin/plugin.json 2>/dev/null || echo "")"
+  [[ "$name" == "atelier" ]] && pass "manifest name is 'atelier'" || fail "manifest name is not 'atelier' (got: $name)"
+  [[ -n "$desc" && "$desc" != "null" ]] && pass "manifest has description" || fail "manifest missing description"
+fi
+
+echo
+echo "# Required directories"
+for d in agents skills hooks bin docs docs/flows docs/process docs/templates meta; do
+  [[ -d "$d" ]] && pass "$d/" || fail "$d/ missing"
+done
+
+echo
+echo "# Required agents (8 default — implementation agents are CAIO-generated per project)"
+for f in product-manager software-architect chief-ai-officer project-manager technical-writer senior-software-engineer tech-lead qa-engineer; do
+  [[ -f "agents/$f.md" ]] && pass "agents/$f.md" || fail "agents/$f.md missing"
+done
+
+echo
+echo "# Required skills"
+for s in init-project status escalate milestone-checkpoint plan-milestone kanban add-agent add-skill add-mcp hotfix release; do
+  [[ -f "skills/$s/SKILL.md" ]] && pass "skills/$s/SKILL.md" || fail "skills/$s/SKILL.md missing"
+done
+
+echo
+echo "# Required process docs"
+for p in change-review-workflow git-flow review-checklists definition-of-done discovery-interview-guide agent-team-sizing user-involvement-levels capability-management code-quality-automation release-process issue-management task-frontmatter; do
+  [[ -f "docs/process/$p.md" ]] && pass "docs/process/$p.md" || fail "docs/process/$p.md missing"
+done
+
+echo
+echo "# Required templates"
+for t in software-engineer-template operating-preferences-template project-claude-template designer-template; do
+  [[ -f "docs/templates/$t.md" ]] && pass "docs/templates/$t.md" || fail "docs/templates/$t.md missing"
+done
+
+echo
+echo "# Required principle docs"
+for d in coding-principles living-documentation; do
+  [[ -f "docs/process/$d.md" ]] && pass "docs/process/$d.md" || fail "docs/process/$d.md missing"
+done
+
+echo
+echo "# Required flow docs"
+for f in agent-document-map agent-communication milestone-flow; do
+  [[ -f "docs/flows/$f.md" ]] && pass "docs/flows/$f.md" || fail "docs/flows/$f.md missing"
+done
+
+echo
+echo "# Maintainer docs"
+for m in README ROADMAP GOVERNANCE version-history v1-api-surface dogfood-plan; do
+  [[ -f "meta/$m.md" ]] && pass "meta/$m.md" || fail "meta/$m.md missing"
+done
+
+echo
+echo "# Bin helpers"
+for b in atelier-open-pr atelier-check-reviews atelier-cleanup-feature atelier-notify atelier-post-merge atelier-migrate atelier-validate atelier-status atelier-sync-tasks atelier-kanban atelier-api-audit; do
+  if [[ -x "bin/$b" ]]; then pass "bin/$b executable"
+  elif [[ -f "bin/$b" ]]; then fail "bin/$b exists but not executable"
+  else fail "bin/$b missing"
+  fi
+done
+
+echo
+echo "# Agent frontmatter (name + description)"
+for f in agents/*.md; do
+  [[ -f "$f" ]] || continue
+  base="$(basename "$f" .md)"
+  if ! head -10 "$f" | grep -qE '^name:\s*'"$base"'\s*$'; then
+    fail "$f: frontmatter 'name' missing or does not match filename"
+  fi
+  if ! head -10 "$f" | grep -qE '^description:\s*\S'; then
+    fail "$f: frontmatter 'description' missing or empty"
+  else
+    pass "$f frontmatter OK"
+  fi
+done
+
+echo
+echo "# Skill frontmatter (description)"
+for s in skills/*/SKILL.md; do
+  [[ -f "$s" ]] || continue
+  if ! head -10 "$s" | grep -qE '^description:\s*\S'; then
+    fail "$s: frontmatter 'description' missing or empty"
+  else
+    pass "$s description OK"
+  fi
+done
+
+echo
+echo "# Hooks file structural validation"
+if [[ -f hooks/hooks.json ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    if jq -e . hooks/hooks.json >/dev/null 2>&1; then
+      pass "hooks/hooks.json is valid JSON"
+      handler_count=$(jq '[.hooks | to_entries[] | .value[] | .hooks[] | .command] | length' hooks/hooks.json 2>/dev/null || echo 0)
+      [[ "$handler_count" -gt 0 ]] && pass "hooks/hooks.json has $handler_count handler(s)" || fail "hooks/hooks.json contains no handlers"
+    else
+      fail "hooks/hooks.json is malformed JSON"
+    fi
+  fi
+else
+  fail "hooks/hooks.json missing"
+fi
+
+echo
+echo "# bin/* shell syntax (bash -n)"
+for f in bin/*; do
+  [[ -f "$f" ]] || continue
+  if bash -n "$f" 2>/dev/null; then
+    pass "$(basename "$f") syntax OK"
+  else
+    fail "$(basename "$f") syntax error"
+  fi
+done
+
+echo
+echo "# Frontmatter schema (agents)"
+for f in agents/*.md; do
+  [[ -f "$f" ]] || continue
+  base="$(basename "$f" .md)"
+  desc_line="$(head -10 "$f" | grep -E '^description:' || echo '')"
+  desc_value="${desc_line#description:}"
+  desc_value="${desc_value# }"
+  if [[ -z "$desc_value" ]]; then
+    : # already covered above
+  elif [[ ${#desc_value} -lt 30 ]]; then
+    fail "$f: description too short (${#desc_value} chars; min 30)"
+  fi
+  if [[ ! "$base" =~ ^[a-z][a-z0-9-]+$ ]]; then
+    fail "$f: filename must be kebab-case ([a-z][a-z0-9-]+)"
+  fi
+done
+
+echo
+echo "# ADR template structure (when present)"
+if [[ -d docs/ssot/decisions ]]; then
+  for adr in docs/ssot/decisions/adr-*.md; do
+    [[ -f "$adr" ]] || continue
+    missing=""
+    for section in "## Status" "## Context" "## Decision" "## Consequences"; do
+      grep -qE "^$section" "$adr" || missing="$missing $section"
+    done
+    if [[ -n "$missing" ]]; then
+      fail "$(basename "$adr"): missing required ADR sections:$missing"
+    else
+      pass "$(basename "$adr") ADR sections OK"
+    fi
+  done
+fi
+
+echo
+echo "# Capability log row format (when present)"
+if [[ -f docs/agents/capability-log.md ]]; then
+  rows=$(grep -cE '^\| [0-9]{4}-[0-9]{2}-[0-9]{2}' docs/agents/capability-log.md 2>/dev/null || echo 0)
+  if [[ "$rows" -gt 0 ]]; then
+    bad_rows=0
+    while IFS='|' read -r _ date type name added_by trigger justification adr _; do
+      [[ -z "$date" || ! "$date" =~ [0-9]{4}-[0-9]{2}-[0-9]{2} ]] && continue
+      type_trim="${type// /}"
+      [[ "$type_trim" =~ ^(skill|mcp|agent)$ ]] || bad_rows=$((bad_rows + 1))
+    done < <(grep -E '^\| [0-9]{4}-[0-9]{2}-[0-9]{2}' docs/agents/capability-log.md)
+    if [[ $bad_rows -gt 0 ]]; then
+      fail "capability-log.md has $bad_rows row(s) with invalid 'type' (must be: skill|mcp|agent)"
+    else
+      pass "capability-log.md $rows row(s) OK"
+    fi
+  fi
+fi
+
+echo
+echo "# Task frontmatter (when in a user-project root)"
+if [[ -d docs/roadmap/tasks ]]; then
+  bad_tasks=0
+  for t in docs/roadmap/tasks/t*-*.md docs/roadmap/tasks/h*-*.md; do
+    [[ -f "$t" ]] || continue
+    base="$(basename "$t" .md)"
+    id="$(grep -E '^id:' "$t" 2>/dev/null | head -n1 | sed -E 's/^id:[[:space:]]*//')"
+    [[ -z "$id" ]] && { fail "$t: missing 'id' frontmatter"; bad_tasks=$((bad_tasks+1)); continue; }
+    [[ "$base" == "$id"* ]] || { fail "$t: filename ($base) does not start with id ($id)"; bad_tasks=$((bad_tasks+1)); }
+    for k in title status lane size acceptance; do
+      grep -qE "^$k:" "$t" || { fail "$t: missing required key '$k:'"; bad_tasks=$((bad_tasks+1)); }
+    done
+    lane="$(grep -E '^lane:' "$t" 2>/dev/null | head -n1 | sed -E 's/^lane:[[:space:]]*//')"
+    case "$lane" in
+      backlog|todo|in-progress|in-review|done) ;;
+      *) fail "$t: lane '$lane' not in {backlog,todo,in-progress,in-review,done}"; bad_tasks=$((bad_tasks+1)) ;;
+    esac
+    size="$(grep -E '^size:' "$t" 2>/dev/null | head -n1 | sed -E 's/^size:[[:space:]]*//')"
+    case "$size" in
+      S|M|L|"") ;;
+      *) fail "$t: size '$size' not in {S,M,L}"; bad_tasks=$((bad_tasks+1)) ;;
+    esac
+  done
+  [[ $bad_tasks -eq 0 ]] && pass "task frontmatter OK"
+fi
+
+echo
+if [[ $FAIL -eq 0 ]]; then
+  echo "All checks passed."
+  exit 0
+else
+  echo "Validation failed."
+  exit 1
+fi
