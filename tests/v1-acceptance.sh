@@ -6,7 +6,7 @@
 #
 # Composes (does not duplicate):
 #   1. bin/atelier-validate            — structural plugin validity
-#   2. bin/atelier-api-audit           — frozen API surface (8 categories)
+#   2. plugins/atelier/bin/atelier-api-audit           — frozen API surface (8 categories)
 #   3. tests/verify-migration.sh        — atelier-migrate v0.1→v0.3 path
 #   4. tests/verify-marketplace-metadata.sh — plugin.json + marketplace.json publish-ready
 #
@@ -32,13 +32,13 @@ run() {
   fi
 }
 
-run "1. atelier-validate"  "bash bin/atelier-validate >/dev/null"
-run "2. atelier-api-audit" "bin/atelier-api-audit >/dev/null"
+run "1. atelier-validate"  "bash plugins/atelier/bin/atelier-validate >/dev/null"
+run "2. atelier-api-audit" "plugins/atelier/bin/atelier-api-audit >/dev/null"
 run "3. verify-migration"  "bash tests/verify-migration.sh >/dev/null"
 
 # 4. atelier-status --json sanity
 printf '\n[4. atelier-status --json]\n'
-if bin/atelier-status --json | python3 -c "import sys, json; json.load(sys.stdin)" >/dev/null 2>&1; then
+if plugins/atelier/bin/atelier-status --json | python3 -c "import sys, json; json.load(sys.stdin)" >/dev/null 2>&1; then
   echo "  -> JSON output parses"
 else
   echo "  -> atelier-status --json FAILED to produce valid JSON" >&2
@@ -47,7 +47,7 @@ fi
 
 # 5. plugin.json well-formed + version readable
 printf '\n[5. plugin.json]\n'
-plugin_v=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])" 2>/dev/null || echo "")
+plugin_v=$(python3 -c "import json; print(json.load(open('plugins/atelier/.claude-plugin/plugin.json'))['version'])" 2>/dev/null || echo "")
 if [[ -n "$plugin_v" ]]; then
   echo "  -> plugin.json valid; version: $plugin_v"
 else

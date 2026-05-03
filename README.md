@@ -101,7 +101,7 @@ LLMs writing code are powerful, but in real projects they:
 ```bash
 # v1.0 install (until marketplace publish): clone and load
 git clone https://github.com/dudgns0908/atelier
-claude --plugin-dir /absolute/path/to/atelier
+claude --plugin-dir /absolute/path/to/atelier/plugins/atelier
 
 # Once published to a marketplace, install will become:
 # /plugin install atelier

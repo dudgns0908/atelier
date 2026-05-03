@@ -4,6 +4,7 @@
 
 set -eo pipefail
 
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PLUGIN_ROOT"
 
@@ -14,11 +15,11 @@ fail() { printf '  [FAIL] %s\n' "$1" >&2; FAIL=1; }
 echo "Validating atelier plugin at: $PLUGIN_ROOT"
 echo
 
-# Self-check (m01 tech debt: validate the validator before trusting its output)
+# Self-check (validate the validator before trusting its output)
 echo "# Self-check"
-[[ -x "$0" ]] && pass "atelier-validate is executable" || fail "atelier-validate exists but not executable"
-[[ -f "$0" ]] && pass "atelier-validate file present" || fail "atelier-validate file missing (impossible if running)"
-if bash -n "$0" 2>/dev/null; then pass "atelier-validate has valid bash syntax"
+[[ -x "$SELF" ]] && pass "atelier-validate is executable" || fail "atelier-validate exists but not executable"
+[[ -f "$SELF" ]] && pass "atelier-validate file present" || fail "atelier-validate file missing (impossible if running)"
+if bash -n "$SELF" 2>/dev/null; then pass "atelier-validate has valid bash syntax"
 else fail "atelier-validate has bash syntax error (somehow ran anyway?)"; fi
 
 echo
@@ -35,7 +36,7 @@ fi
 
 echo
 echo "# Required directories"
-for d in agents skills hooks bin docs docs/flows docs/process docs/templates meta; do
+for d in agents skills hooks bin docs docs/flows docs/process docs/templates; do
   [[ -d "$d" ]] && pass "$d/" || fail "$d/ missing"
 done
 
@@ -76,10 +77,14 @@ for f in agent-document-map agent-communication milestone-flow; do
 done
 
 echo
-echo "# Maintainer docs"
-for m in README ROADMAP GOVERNANCE version-history v1-api-surface dogfood-plan; do
-  [[ -f "meta/$m.md" ]] && pass "meta/$m.md" || fail "meta/$m.md missing"
-done
+echo "# Maintainer docs (outside plugin tree, optional)"
+if [[ -d ../../meta ]]; then
+  for m in README ROADMAP GOVERNANCE version-history v1-api-surface dogfood-plan; do
+    [[ -f "../../meta/$m.md" ]] && pass "meta/$m.md" || fail "meta/$m.md missing"
+  done
+else
+  pass "meta/ not present (standalone install — not maintainer mode)"
+fi
 
 echo
 echo "# Bin helpers"

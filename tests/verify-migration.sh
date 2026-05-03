@@ -65,7 +65,7 @@ echo "  - pr-workflow references in some-rule.md: $(grep -c 'pr-workflow.md' "$F
 echo "  - docs/agents/agent-specs/ exists: $([[ -d "$FIXTURE/docs/agents/agent-specs" ]] && echo yes || echo no)"
 
 cd "$FIXTURE"
-"$REPO_ROOT/bin/atelier-migrate" --from 0.1.0 --to 0.3.0 --apply >/tmp/atelier-verify-migration.log 2>&1 || {
+"$REPO_ROOT/plugins/atelier/bin/atelier-migrate" --from 0.1.0 --to 0.3.0 --apply >/tmp/atelier-verify-migration.log 2>&1 || {
   echo "FAIL: atelier-migrate exited non-zero"
   cat /tmp/atelier-verify-migration.log
   exit 1

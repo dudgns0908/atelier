@@ -104,7 +104,7 @@ LLM이 코드를 짜는 건 강력하지만, 실제 프로젝트에서:
 ```bash
 # v1.0 install (마켓플레이스 게시 전까지): 클론 + plugin-dir 모드
 git clone https://github.com/dudgns0908/atelier
-claude --plugin-dir /absolute/path/to/atelier
+claude --plugin-dir /absolute/path/to/atelier/plugins/atelier
 
 # v1.0 GA 후 마켓플레이스 install:
 # /plugin install atelier
