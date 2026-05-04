@@ -16,7 +16,7 @@ FAIL=0
 ok()   { printf '  [OK]   %s\n' "$1"; }
 bad()  { printf '  [FAIL] %s\n' "$1" >&2; FAIL=1; }
 
-PLUGIN_JSON=".claude-plugin/plugin.json"
+PLUGIN_JSON="atelier/.claude-plugin/plugin.json"
 MARKETPLACE_JSON=".claude-plugin/marketplace.json"
 
 # 1. plugin.json exists + parses

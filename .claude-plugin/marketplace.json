@@ -22,7 +22,7 @@
       "category": "development",
       "license": "Apache-2.0",
       "homepage": "https://github.com/dudgns0908/atelier",
-      "source": "./plugins/atelier",
+      "source": "./atelier",
       "keywords": [
         "multi-agent",
         "project-management",
