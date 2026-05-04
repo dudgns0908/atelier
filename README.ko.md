@@ -99,15 +99,20 @@ LLM이 코드를 짜는 건 강력하지만, 실제 프로젝트에서:
 
 ### 설치
 
-> **현재 상태 (v1.0.0)**: atelier는 v1.0에서 마켓플레이스 게시-준비 메타데이터를 포함하지만, 아직 Claude Code 마켓플레이스에 게시되진 않았습니다. 게시 전까진 로컬 클론을 직접 로드:
+**마켓플레이스에서 설치 (권장)** — atelier는 이 repo 자체를 단일-플러그인 마켓플레이스로 자가 호스팅:
+
+```
+/plugin marketplace add dudgns0908/atelier
+/plugin install atelier@atelier
+```
+
+형식은 `<plugin-name>@<marketplace-name>`. 둘 다 우연히 `atelier`로 같음.
+
+**소스에서 설치 (컨트리뷰터용 editable 모드)** — 클론 후 in-place 로드:
 
 ```bash
-# v1.0 install (마켓플레이스 게시 전까지): 클론 + plugin-dir 모드
 git clone https://github.com/dudgns0908/atelier
 claude --plugin-dir /absolute/path/to/atelier-repo/atelier
-
-# v1.0 GA 후 마켓플레이스 install:
-# /plugin install atelier
 ```
 
 `--plugin-dir`는 **in-place 로드** — `~/.claude/plugins/` 아래로 복사가 만들어지지 않습니다. 플러그인 source 디렉토리 자체가 install 위치 역할을 합니다. source 수정은 다음 invocation부터 즉시 반영됩니다 (마치 `pip install -e .`의 editable install 패턴).

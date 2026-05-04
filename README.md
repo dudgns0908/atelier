@@ -96,15 +96,20 @@ LLMs writing code are powerful, but in real projects they:
 
 ### Install
 
-> **Status (v1.0.0)**: atelier ships v1.0 with marketplace-ready metadata (`.claude-plugin/marketplace.json` + `.claude-plugin/plugin.json`), but is not yet published to a Claude Code marketplace. Until publish, use the development load path:
+**From the marketplace (recommended)** — atelier is self-hosted as a single-plugin marketplace from this repo:
+
+```
+/plugin marketplace add dudgns0908/atelier
+/plugin install atelier@atelier
+```
+
+The form is `<plugin-name>@<marketplace-name>`; both happen to be `atelier`.
+
+**From source (editable install for contributors)** — clone and load in place:
 
 ```bash
-# v1.0 install (until marketplace publish): clone and load
 git clone https://github.com/dudgns0908/atelier
 claude --plugin-dir /absolute/path/to/atelier-repo/atelier
-
-# Once published to a marketplace, install will become:
-# /plugin install atelier
 ```
 
 `--plugin-dir` is **in-place loading** — no copy is made under `~/.claude/plugins/`. The plugin source directory IS the install location. Edits to the source are picked up on next invocation. This is a normal "editable install" pattern (similar to `pip install -e .`).
