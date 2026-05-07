@@ -1,6 +1,6 @@
 ---
 name: add-mcp
-description: Add a new MCP server to the project mid-project. Wraps the capability-management procedure: external MCP search, ADR draft, .mcp.json update, user install instructions, and capability-log entry. User approval is mandatory regardless of involvement level. Use when an authorized agent identifies a missing external integration.
+description: "Add a new MCP server to the project mid-project. Wraps the capability-management procedure: external MCP search, ADR draft, .mcp.json update, user install instructions, and capability-log entry. User approval is mandatory regardless of involvement level. Use when an authorized agent identifies a missing external integration."
 ---
 
 # Add an MCP Server

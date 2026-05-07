@@ -1,6 +1,6 @@
 ---
 name: add-agent
-description: Add a new project-specific agent mid-project, with Chief AI Officer drafting the definition and justification, and the user approving. Use when project scope expands (new domain emerges, a parallel track is needed, or critical expertise is missing) during Phase 2.
+description: "Add a new project-specific agent mid-project, with Chief AI Officer drafting the definition and justification, and the user approving. Use when project scope expands (new domain emerges, a parallel track is needed, or critical expertise is missing) during Phase 2."
 ---
 
 # Add a Project-Specific Agent

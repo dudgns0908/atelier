@@ -111,7 +111,7 @@ for f in agents/*.md; do
 done
 
 echo
-echo "# Skill frontmatter (name + description)"
+echo "# Skill frontmatter (name + description + valid YAML)"
 for s in skills/*/SKILL.md; do
   [[ -f "$s" ]] || continue
   base="$(basename "$(dirname "$s")")"
@@ -123,6 +123,30 @@ for s in skills/*/SKILL.md; do
   if ! head -10 "$s" | grep -qE '^description:\s*\S'; then
     fail "$s: frontmatter 'description' missing or empty"
     ok=0
+  fi
+  # Parse YAML frontmatter — if it fails, Claude Code silently drops the skill
+  if command -v python3 >/dev/null 2>&1; then
+    if ! python3 -c "
+import sys
+try:
+    import yaml
+except ImportError:
+    sys.exit(0)  # No yaml lib — skip this check
+with open('$s') as f:
+    text = f.read()
+parts = text.split('---', 2)
+if len(parts) < 3:
+    sys.exit('no frontmatter delimiters')
+try:
+    d = yaml.safe_load(parts[1])
+    if not isinstance(d, dict):
+        sys.exit('frontmatter is not a mapping')
+except yaml.YAMLError as e:
+    sys.exit(f'YAML parse error: {e}')
+" 2>/dev/null; then
+      fail "$s: YAML frontmatter does not parse — Claude Code will silently drop metadata. Quote values containing ': ' or other YAML-significant characters."
+      ok=0
+    fi
   fi
   [[ $ok -eq 1 ]] && pass "$s frontmatter OK"
 done
