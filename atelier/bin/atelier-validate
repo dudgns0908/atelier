@@ -111,14 +111,20 @@ for f in agents/*.md; do
 done
 
 echo
-echo "# Skill frontmatter (description)"
+echo "# Skill frontmatter (name + description)"
 for s in skills/*/SKILL.md; do
   [[ -f "$s" ]] || continue
+  base="$(basename "$(dirname "$s")")"
+  ok=1
+  if ! head -10 "$s" | grep -qE '^name:\s*'"$base"'\s*$'; then
+    fail "$s: frontmatter 'name' missing or does not match directory ('$base')"
+    ok=0
+  fi
   if ! head -10 "$s" | grep -qE '^description:\s*\S'; then
     fail "$s: frontmatter 'description' missing or empty"
-  else
-    pass "$s description OK"
+    ok=0
   fi
+  [[ $ok -eq 1 ]] && pass "$s frontmatter OK"
 done
 
 echo

@@ -1,4 +1,5 @@
 ---
+name: add-skill
 description: Add a new project-specific skill mid-project. Wraps the capability-extension procedure: reuse audit, skill-creator invocation, capability-log entry, user approval, and reload reminder. Use when an authorized agent identifies a missing helper-skill capability during Phase 1 STEP 2/3 or anywhere in Phase 2.
 ---
 

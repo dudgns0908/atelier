@@ -1,4 +1,5 @@
 ---
+name: hotfix
 description: Produce a production hotfix — branch from main, fix, change-review back into main, then merge the fix back into develop. Use when a bug in the released version (main) must be patched without waiting for the normal develop→main cycle.
 ---
 
