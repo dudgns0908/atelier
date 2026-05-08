@@ -1,6 +1,6 @@
 ---
 name: plan-milestone
-description: "Decompose an active milestone into PR-sized tasks via multi-agent discussion (PM proposes, Tech Lead challenges, CAIO conditional). Use at the start of every milestone in Phase 2 — it's the bridge between the high-level roadmap and per-PR execution. Produces task files with lane/epic/depends_on/acceptance frontmatter and (in GitHub mode) mirrored Issues."
+description: Decompose an active milestone into PR-sized tasks via multi-agent discussion (PM proposes, Tech Lead challenges, CAIO conditional). Use at the start of every milestone in Phase 2 — it's the bridge between the high-level roadmap and per-PR execution. Produces task files with lane/epic/depends_on/acceptance frontmatter and (in GitHub mode) mirrored Issues.
 ---
 
 # Plan Milestone

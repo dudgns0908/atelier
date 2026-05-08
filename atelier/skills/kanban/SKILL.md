@@ -1,6 +1,6 @@
 ---
 name: kanban
-description: "Render the active milestone's tasks as a kanban board grouped by lane (backlog / todo / in-progress / in-review / done). Forge-aware — GitHub mode shows the Projects v2 URL alongside ASCII fallback; other forges render ASCII only. WIP overflow is flagged but not blocked. Use whenever the user asks \"what's where\" or wants a quick board view."
+description: Render the active milestone's tasks as a kanban board grouped by lane (backlog / todo / in-progress / in-review / done). Forge-aware — GitHub mode shows the Projects v2 URL alongside ASCII fallback; other forges render ASCII only. WIP overflow is flagged but not blocked. Use whenever the user asks "what's where" or wants a quick board view.
 ---
 
 # Kanban

@@ -1,6 +1,6 @@
 ---
 name: init-project
-description: "Initialize a new project with a structured, multi-agent workflow — discovery interview, operating preferences, technical design, agent team formation, roadmap construction, documentation consolidation, and a final user approval gate. Use when the user starts a fresh project and wants a rigorous setup before any code is written."
+description: Initialize a new project with a structured, multi-agent workflow — discovery interview, operating preferences, technical design, agent team formation, roadmap construction, documentation consolidation, and a final user approval gate. Use when the user starts a fresh project and wants a rigorous setup before any code is written.
 ---
 
 # Initialize Project

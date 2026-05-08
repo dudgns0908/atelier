@@ -1,6 +1,6 @@
 ---
 name: release
-description: "Cut a release — promote develop to main, generate changelog, tag a semver version, and publish release notes. Use when Project Manager marks a milestone complete and the user approves."
+description: Cut a release — promote develop to main, generate changelog, tag a semver version, and publish release notes. Use when Project Manager marks a milestone complete and the user approves.
 ---
 
 # Release

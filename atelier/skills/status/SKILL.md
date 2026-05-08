@@ -1,6 +1,6 @@
 ---
 name: status
-description: "Show a dashboard of the current project state — active milestone, in-progress tasks, open PRs with review status, recent risks, and escalation signals. Use whenever the user asks \"where are we?\", \"what's open?\", or \"what's blocked?\". Pass `--json` for machine-readable output (schema: docs/process/status-schema.md)."
+description: Show a dashboard of the current project state — active milestone, in-progress tasks, open PRs with review status, recent risks, and escalation signals. Use whenever the user asks "where are we?", "what's open?", or "what's blocked?". Pass `--json` for machine-readable output (schema at docs/process/status-schema.md).
 ---
 
 # Project Status

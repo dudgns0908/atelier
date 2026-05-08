@@ -1,6 +1,6 @@
 ---
 name: milestone-checkpoint
-description: "Run a milestone completion checkpoint — summarize what was delivered against the milestone's success criteria, surface risks and debt, and either obtain user approval to proceed to the next milestone or route back for remediation. Required when user involvement level is \"Milestone Checkpoints\" or stricter."
+description: Run a milestone completion checkpoint — summarize what was delivered against the milestone's success criteria, surface risks and debt, and either obtain user approval to proceed to the next milestone or route back for remediation. Required when user involvement level is "Milestone Checkpoints" or stricter.
 ---
 
 # Milestone Checkpoint

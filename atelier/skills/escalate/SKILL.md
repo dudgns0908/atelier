@@ -1,6 +1,6 @@
 ---
 name: escalate
-description: "Re-activate a Phase 1 agent from STANDBY because a requirement, design, roadmap, team-composition, or documentation drift has been detected. The user invokes this with the target agent name and a brief reason. Use when Phase 2 cannot proceed without a Phase 1 decision."
+description: Re-activate a Phase 1 agent from STANDBY because a requirement, design, roadmap, team-composition, or documentation drift has been detected. The user invokes this with the target agent name and a brief reason. Use when Phase 2 cannot proceed without a Phase 1 decision.
 ---
 
 # Escalate to a Phase 1 Agent
