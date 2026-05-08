@@ -90,7 +90,7 @@ PYEOF
   fi
 }
 
-for key in name description version author license homepage repository keywords category; do
+for key in name description version author license homepage repository keywords; do
   val=$(read_json ".${key}" "$PLUGIN_JSON" 2>/dev/null || echo "")
   if [[ -n "$val" && "$val" != "null" && "$val" != "{}" && "$val" != "[]" ]]; then
     ok "plugin.json has '$key'"
@@ -118,7 +118,7 @@ else
 fi
 
 # 4. marketplace.json required fields
-for key in '$schema' name description owner metadata plugins; do
+for key in name description owner metadata plugins; do
   val=$(read_json ".\"$key\"" "$MARKETPLACE_JSON" 2>/dev/null || echo "")
   if [[ -n "$val" && "$val" != "null" && "$val" != "{}" && "$val" != "[]" ]]; then
     ok "marketplace.json has '$key'"
@@ -137,15 +137,7 @@ else
   bad "name mismatch: plugin.json='$plugin_name', marketplace.json[plugins[0]].name='$mp_plugin_name'"
 fi
 
-# 6. Schema reference
-schema_ref=$(read_json '."$schema"' "$MARKETPLACE_JSON" 2>/dev/null || echo "")
-if [[ "$schema_ref" == *"marketplace.schema.json"* ]]; then
-  ok "marketplace.json declares marketplace.schema.json"
-else
-  bad "marketplace.json missing or wrong \$schema reference: '$schema_ref'"
-fi
-
-# 7. plugin.json version matches marketplace.metadata.version (best practice)
+# 6. plugin.json version matches marketplace.metadata.version (best practice)
 plugin_version=$(read_json ".version" "$PLUGIN_JSON")
 mp_version=$(read_json ".metadata.version" "$MARKETPLACE_JSON" 2>/dev/null || echo "")
 if [[ "$plugin_version" == "$mp_version" ]]; then

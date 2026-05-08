@@ -1,5 +1,4 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "rabbit-labs",
   "description": "rabbit-labs marketplace — Younghun Kim's plugin collection. Currently hosts atelier (universal multi-agent project harness for Claude Code).",
   "owner": {
