@@ -99,14 +99,14 @@ LLM이 코드를 짜는 건 강력하지만, 실제 프로젝트에서:
 
 ### 설치
 
-**마켓플레이스에서 설치 (권장)** — atelier는 이 repo 자체를 단일-플러그인 마켓플레이스로 자가 호스팅:
+**마켓플레이스에서 설치 (권장)** — atelier는 `rabbit-labs` 마켓플레이스에서 호스팅:
 
 ```
 /plugin marketplace add dudgns0908/atelier
-/plugin install atelier@atelier
+/plugin install atelier@rabbit-labs
 ```
 
-형식은 `<plugin-name>@<marketplace-name>`. 둘 다 우연히 `atelier`로 같음.
+형식은 `<plugin-name>@<marketplace-name>`.
 
 **소스에서 설치 (컨트리뷰터용 editable 모드)** — 클론 후 in-place 로드:
 

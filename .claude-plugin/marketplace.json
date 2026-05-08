@@ -1,13 +1,13 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "atelier",
-  "description": "Single-plugin marketplace for atelier — universal multi-agent project harness for Claude Code.",
+  "name": "rabbit-labs",
+  "description": "rabbit-labs marketplace — Younghun Kim's plugin collection. Currently hosts atelier (universal multi-agent project harness for Claude Code).",
   "owner": {
     "name": "Younghun Kim",
     "email": "dudgns09081@gmail.com"
   },
   "metadata": {
-    "description": "atelier — universal multi-agent project harness for Claude Code. This marketplace surfaces the single atelier plugin from its source repository.",
+    "description": "rabbit-labs — Younghun Kim's Claude Code plugin marketplace. Currently surfaces atelier (universal multi-agent project harness) and is set up to host additional plugins.",
     "version": "1.0.0",
     "homepage": "https://github.com/dudgns0908/atelier"
   },
@@ -19,7 +19,6 @@
         "name": "Younghun Kim",
         "email": "dudgns09081@gmail.com"
       },
-      "category": "development",
       "license": "Apache-2.0",
       "homepage": "https://github.com/dudgns0908/atelier",
       "source": "./atelier",
