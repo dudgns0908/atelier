@@ -96,13 +96,7 @@ LLMs writing code are powerful, but in real projects they:
 
 ### Install
 
-**From the official Anthropic marketplace (recommended)** — atelier is listed in `claude-plugins-official`, available in every Claude Code session by default:
-
-```
-/plugin install atelier@claude-plugins-official
-```
-
-**From the author's marketplace (alternative)** — install from the source repo via the `tokki-labs` marketplace:
+**From the marketplace (recommended)** — atelier is hosted under the `tokki-labs` marketplace from this repo:
 
 ```
 /plugin marketplace add dudgns0908/atelier

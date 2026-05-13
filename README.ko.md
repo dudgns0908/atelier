@@ -99,13 +99,7 @@ LLM이 코드를 짜는 건 강력하지만, 실제 프로젝트에서:
 
 ### 설치
 
-**Anthropic 공식 마켓플레이스에서 설치 (권장)** — atelier는 `claude-plugins-official`에 등재되어 모든 Claude Code 세션에서 기본 사용 가능:
-
-```
-/plugin install atelier@claude-plugins-official
-```
-
-**작가 자체 마켓플레이스에서 설치 (대체)** — 소스 repo의 `tokki-labs` 마켓플레이스 경유:
+**마켓플레이스에서 설치 (권장)** — atelier는 `tokki-labs` 마켓플레이스에서 호스팅:
 
 ```
 /plugin marketplace add dudgns0908/atelier
