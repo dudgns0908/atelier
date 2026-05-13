@@ -96,11 +96,11 @@ LLMs writing code are powerful, but in real projects they:
 
 ### Install
 
-**From the marketplace (recommended)** — atelier is hosted under the `rabbit-labs` marketplace from this repo:
+**From the marketplace (recommended)** — atelier is hosted under the `tokki-labs` marketplace from this repo:
 
 ```
 /plugin marketplace add dudgns0908/atelier
-/plugin install atelier@rabbit-labs
+/plugin install atelier@tokki-labs
 ```
 
 The form is `<plugin-name>@<marketplace-name>`.

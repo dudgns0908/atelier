@@ -99,11 +99,11 @@ LLM이 코드를 짜는 건 강력하지만, 실제 프로젝트에서:
 
 ### 설치
 
-**마켓플레이스에서 설치 (권장)** — atelier는 `rabbit-labs` 마켓플레이스에서 호스팅:
+**마켓플레이스에서 설치 (권장)** — atelier는 `tokki-labs` 마켓플레이스에서 호스팅:
 
 ```
 /plugin marketplace add dudgns0908/atelier
-/plugin install atelier@rabbit-labs
+/plugin install atelier@tokki-labs
 ```
 
 형식은 `<plugin-name>@<marketplace-name>`.

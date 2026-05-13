@@ -1,12 +1,12 @@
 {
-  "name": "rabbit-labs",
-  "description": "rabbit-labs marketplace — Younghun Kim's plugin collection. Currently hosts atelier (universal multi-agent project harness for Claude Code).",
+  "name": "tokki-labs",
+  "description": "tokki-labs marketplace — Younghun Kim's plugin collection. Currently hosts atelier (universal multi-agent project harness for Claude Code).",
   "owner": {
     "name": "Younghun Kim",
     "email": "dudgns09081@gmail.com"
   },
   "metadata": {
-    "description": "rabbit-labs — Younghun Kim's Claude Code plugin marketplace. Currently surfaces atelier (universal multi-agent project harness) and is set up to host additional plugins.",
+    "description": "tokki-labs — Younghun Kim's Claude Code plugin marketplace. Currently surfaces atelier (universal multi-agent project harness) and is set up to host additional plugins.",
     "version": "1.0.0",
     "homepage": "https://github.com/dudgns0908/atelier"
   },
